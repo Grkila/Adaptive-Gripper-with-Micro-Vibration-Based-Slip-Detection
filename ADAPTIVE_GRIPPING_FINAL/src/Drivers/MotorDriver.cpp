@@ -285,10 +285,7 @@ void MotorDriver::motorTask(void* parameter) {
             // --- 3. Hardware Control ---
             if (driver != nullptr) {
                 // Debug: print every 100 loops when motor is active
-                if (loopCount % 100 == 0 && (enabled || currentSpeed != 0)) {
-                    Serial.print("[MTR-TASK] VACTUAL: ");
-                    Serial.println(currentSpeed);
-                }
+                
                 if (enabled) {
                     driver->VACTUAL(currentSpeed);
                 } else {
@@ -310,4 +307,88 @@ void MotorDriver::motorTask(void* parameter) {
         // Delay for next cycle
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
+}
+
+void MotorDriver::runHomingRoutine() {
+    Serial.println("[MTR] Homing routine starting...");
+    if (!initialized) {
+        Serial.println("[MTR] Not initialized, cannot home.");
+        return;
+    }
+
+    // 1. Setup for homing
+    if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
+        Serial.println("[MTR] Configuring for homing (Low Current, StealthChop)...");
+        // Decrease current to safety limit
+        driver->rms_current(TMC_HOMING_CURRENT); 
+        // Switch to StealthChop for sensitive StallGuard4
+        driver->en_spreadCycle(false);
+        driver->pwm_autoscale(true);
+        driver->SGTHRS(TMC_HOMING_THRESHOLD);
+        
+        // Set speed (using internal vars to play nice with task)
+        positionMode = false;
+        targetSpeed = TMC_HOMING_SPEED * TMC_HOMING_DIRECTION;
+        
+        // Enable motor
+        if (!enabled) {
+            digitalWrite(TMC_EN_PIN, LOW);
+            enabled = true;
+        }
+        
+        xSemaphoreGiveRecursive(driverMutex);
+    } else {
+        Serial.println("[MTR] Failed to take mutex for homing setup");
+        return;
+    }
+
+    // 2. Wait for Stall
+    Serial.println("[MTR] Moving... waiting for stall.");
+    unsigned long startTime = millis();
+    bool stalled = false;
+    
+    // Initial delay to skip acceleration current spike
+    delay(5000); 
+
+    while (millis() - startTime < TMC_HOMING_TIMEOUT_MS) {
+        int32_t load = getLoad(); 
+        // SG_RESULT is 0..510. Lower = higher load. 0 = Stall.
+        // Serial output might be too fast, throttle it
+        if ((millis() % 200) == 0) Serial.printf("[MTR] Load: %d\n", load);
+
+        // Check if load drops below threshold (Stall detected)
+        // Higher threshold = Higher sensitivity (triggers earlier)
+        if (load < TMC_HOMING_THRESHOLD) { 
+             Serial.printf("[MTR] Stall detected! Load: %d < %d\n", load, TMC_HOMING_THRESHOLD);
+             stalled = true;
+             break;
+        }
+        delay(10);
+    }
+
+    if (!stalled) {
+        Serial.println("[MTR] Homing timed out without stall (or hard stop reached safely due to low current).");
+    }
+
+    // 3. Stop and Reset
+    stop(); // Sets targetSpeed = 0
+    delay(500); // Wait for full stop
+
+    if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
+        Serial.println("[MTR] Restoring normal configuration...");
+        // Reset Position to 0
+        currentPosition = 0.0f;
+        targetPosition = 0.0f;
+        
+        // Restore Current
+        driver->rms_current(TMC_RUN_CURRENT);
+        // Restore SpreadCycle
+        driver->en_spreadCycle(true);
+        // Restore SGTHRS
+        driver->SGTHRS(TMC_STALL_VALUE);
+        
+        xSemaphoreGiveRecursive(driverMutex);
+    }
+    
+    Serial.println("[MTR] Homing routine complete.");
 }

@@ -24,9 +24,11 @@ public:
     static void disable();
     static int32_t getLoad();
 
+    // Homing
+    static void runHomingRoutine();
+
 private:
     static void motorTask(void* parameter);
-    static void runHomingRoutine();
     
     // Internal state
     static volatile float targetPosition;

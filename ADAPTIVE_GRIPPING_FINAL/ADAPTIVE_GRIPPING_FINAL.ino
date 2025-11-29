@@ -90,6 +90,11 @@ void setup() {
   Buttons::init();
   MotorDriver::init();
   
+  // Automatic Z Homing
+  Serial.println("Starting Automatic Z Homing...");
+  MotorDriver::runHomingRoutine();
+  Serial.println("Z Homing Complete.");
+  
   // Initialize logic modules
   Filters::init();
   

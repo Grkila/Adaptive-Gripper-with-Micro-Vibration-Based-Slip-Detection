@@ -117,5 +117,11 @@ constexpr int TMC_ACCELERATION = 2000;     // Speed increment per loop cycle
 constexpr int TMC_TASK_DELAY_MS = 10;      // Update loop frequency (approx 100Hz)
 constexpr BaseType_t TMC_TASK_CORE = 0;    // Run on Core 1
 
-#endif // CONFIG_H
+// Automatic Homing Configuration
+constexpr int TMC_HOMING_CURRENT = 200;    // mA (Limit to 0.2A as requested)
+constexpr int TMC_HOMING_SPEED = 100000;     // Slow speed for homing (VACTUAL units)
+constexpr int TMC_HOMING_THRESHOLD = 50;   // StallGuard threshold for homing (adjust as needed)
+constexpr int TMC_HOMING_DIRECTION = 1;    // 1 for forward/up, -1 for backward/down
+constexpr int TMC_HOMING_TIMEOUT_MS = 1000000; // Safety timeout
 
+#endif // CONFIG_H

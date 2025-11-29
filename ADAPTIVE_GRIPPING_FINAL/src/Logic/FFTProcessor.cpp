@@ -7,7 +7,7 @@ namespace FFTProcessor {
   
   bool processSingleAxis(AxisFFT& axisData, double value) {
     // Protect FFT data access with mutex
-    if (xSemaphoreTake(mutexFFTData, 0) == pdTRUE) {
+    if (mutexFFTData != NULL && xSemaphoreTake(mutexFFTData, 0) == pdTRUE) {
       
       // Don't add new samples if FFT is complete and waiting to be printed
       if (!axisData.FFT_complete) {

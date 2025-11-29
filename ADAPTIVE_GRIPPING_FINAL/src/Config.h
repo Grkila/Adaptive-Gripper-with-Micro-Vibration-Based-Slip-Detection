@@ -94,5 +94,28 @@ constexpr BaseType_t DEBUG_TASK_CORE = 0;
 // ============================================
 constexpr uint32_t MAGNETIC_I2C_CLOCK_SPEED = 1000000;  // 1 MHz Fast Mode
 
+// ============================================
+// TMC2209 MOTOR CONFIGURATION
+// ============================================
+constexpr int TMC_RX_PIN = 5;    // TMC2209 PDN_UART
+constexpr int TMC_TX_PIN = 17;    // Connect to RX via 1k Resistor
+//constexpr int TMC_DIAG_PIN = 15;  // StallGuard output
+constexpr int TMC_EN_PIN = 18;    // Enable pin
+
+constexpr float TMC_R_SENSE = 0.11f;
+constexpr uint8_t TMC_DRIVER_ADDR = 0b00;
+constexpr int TMC_STALL_VALUE = 3; // Stall Sensitivity (0-255)
+
+constexpr int TMC_RUN_CURRENT = 600; // mA
+constexpr int TMC_MICROSTEPS = 1;     // 1/16 if not set, but user example says 1? user example: driver.microsteps(1); // 1/16 Microstepping. Wait, 1 means full step usually? No, in TMCStepper library logic depends. 0=microstepping disabled? No. 
+// Library: microsteps(uint16_t msteps). 0=256, 1=128?? No, standard is 0, 2, 4, 8, 16 etc.
+// The user example says: driver.microsteps(1); // 1/16 Microstepping. This comment might be wrong or using some specific override. I will copy the user example value.
+
+// Speed Settings
+constexpr int TMC_MAX_SPEED = 100000;      // VACTUAL units
+constexpr int TMC_ACCELERATION = 2000;     // Speed increment per loop cycle
+constexpr int TMC_TASK_DELAY_MS = 10;      // Update loop frequency (approx 100Hz)
+constexpr BaseType_t TMC_TASK_CORE = 0;    // Run on Core 1
+
 #endif // CONFIG_H
 

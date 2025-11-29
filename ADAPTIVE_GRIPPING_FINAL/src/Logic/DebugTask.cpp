@@ -32,7 +32,7 @@ namespace DebugTask {
   
   void updateData() {
     // Update shared debug data with mutex protection
-    if (xSemaphoreTake(mutexSlipData, pdMS_TO_TICKS(5)) == pdTRUE) {
+    if (mutexSlipData != NULL && xSemaphoreTake(mutexSlipData, pdMS_TO_TICKS(5)) == pdTRUE) {
       debugData.slip_flag = slip_flag;
       debugData.slip_indicator = slip_indicator;
       xSemaphoreGive(mutexSlipData);
@@ -55,7 +55,7 @@ namespace DebugTask {
       bool local_fft_ready;
       
       // Read shared data with mutex protection
-      if (xSemaphoreTake(mutexSlipData, pdMS_TO_TICKS(10)) == pdTRUE) {
+      if (mutexSlipData != NULL && xSemaphoreTake(mutexSlipData, pdMS_TO_TICKS(10)) == pdTRUE) {
         local_slip_flag = debugData.slip_flag;
         local_slip_indicator = debugData.slip_indicator;
         local_scan_time = debugData.scan_time_us;
@@ -73,7 +73,7 @@ namespace DebugTask {
           double local_fft_vReal[FFT_SAMPLES];
           double local_fft_vImag[FFT_SAMPLES];
           
-          if (xSemaphoreTake(mutexFFTData, pdMS_TO_TICKS(20)) == pdTRUE) {
+          if (mutexFFTData != NULL && xSemaphoreTake(mutexFFTData, pdMS_TO_TICKS(20)) == pdTRUE) {
             memcpy(local_fft_vReal, fftX_high_pass.vReal, FFT_SAMPLES * sizeof(double));
             memcpy(local_fft_vImag, fftX_high_pass.vImag, FFT_SAMPLES * sizeof(double));
             

@@ -35,6 +35,7 @@
 #include "src/Drivers/CurrentSensor.h"
 #include "src/Drivers/ServoDriver.h"
 #include "src/Drivers/Buttons.h"
+#include "src/Drivers/MotorDriver.h"
 #include "src/Logic/Filters.h"
 #include "src/Logic/FFTProcessor.h"
 #include "src/Logic/SlipDetection.h"
@@ -80,6 +81,7 @@ void setup() {
 
   
   Buttons::init();
+  MotorDriver::init();
   
   // Initialize logic modules
   Filters::init();
@@ -116,6 +118,9 @@ void loop() {
   
   // Update debug data (non-blocking - actual print runs on Core 0)
   DebugTask::updateData();
+
+  // Yield to avoid starving other tasks/watchdog
+  yield();
 }
 
 // ============================================
@@ -123,7 +128,7 @@ void loop() {
 // ============================================
 void readInputs() {
   // Check if timer triggered new sample
-  if (xSemaphoreTake(timerSemaphore, 0) == pdTRUE) {
+  if (timerSemaphore != NULL && xSemaphoreTake(timerSemaphore, 0) == pdTRUE) {
     currentSampleTime = micros();
     
     if (lastSampleTime > 0) {
@@ -155,7 +160,8 @@ void readInputs() {
     unsigned long scan_duration = currentSampleTime - lastSampleTime;
     bool time_exceeded = (scan_duration >= SCAN_INTERVAL_US + SCAN_INTERVAL_US / 4);
     
-    if (xSemaphoreTake(mutexSlipData, pdMS_TO_TICKS(0)) == pdTRUE) {
+    // Guard against null mutex (created in DebugTask::init)
+    if (mutexSlipData != NULL && xSemaphoreTake(mutexSlipData, pdMS_TO_TICKS(0)) == pdTRUE) {
       debugData.scan_time_us = scan_duration;
       debugData.scan_time_exceeded = time_exceeded;
       xSemaphoreGive(mutexSlipData);
@@ -202,6 +208,34 @@ void processLogic() {
   
   // Process gripping state machine
   GrippingFSM::process(buttons, current_mA, magData.magnitude);
+
+  // Process Lift Control (TMC2209) - Speed Mode
+  // Only call if button state changed to avoid flooding with calls
+  static bool lastBtn3 = false, lastBtn4 = false, lastBtn5 = false;
+  
+  // Button 3: Up
+  if (buttons.button_3 && !lastBtn3) {
+      Serial.println("[MAIN] Button 3 pressed - calling setTargetSpeed");
+      MotorDriver::setTargetSpeed(-TMC_MAX_SPEED); 
+      Serial.println("[MAIN] Button 3 - setTargetSpeed returned");
+  }
+  lastBtn3 = buttons.button_3;
+ 
+  // Button 4: Down
+  if (buttons.button_4 && !lastBtn4) {
+      Serial.println("[MAIN] Button 4 pressed - calling setTargetSpeed");
+      MotorDriver::setTargetSpeed(TMC_MAX_SPEED);
+      Serial.println("[MAIN] Button 4 - setTargetSpeed returned");
+  }
+  lastBtn4 = buttons.button_4;
+  
+  // Button 5: Stop
+  if (buttons.button_5 && !lastBtn5) {
+      Serial.println("[MAIN] Button 5 pressed - calling setTargetSpeed(0)");
+      MotorDriver::setTargetSpeed(0);
+      Serial.println("[MAIN] Button 5 - setTargetSpeed returned");
+  }
+  lastBtn5 = buttons.button_5;
 }
 
 // ============================================

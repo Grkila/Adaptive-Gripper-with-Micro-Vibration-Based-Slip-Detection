@@ -35,7 +35,7 @@ namespace SlipDetection {
       }
       
       // Update shared debug data
-      if (xSemaphoreTake(mutexSlipData, pdMS_TO_TICKS(5)) == pdTRUE) {
+      if (mutexSlipData != NULL && xSemaphoreTake(mutexSlipData, pdMS_TO_TICKS(5)) == pdTRUE) {
         debugData.slip_flag = slip_flag;
         debugData.slip_indicator = slip_indicator;
         xSemaphoreGive(mutexSlipData);

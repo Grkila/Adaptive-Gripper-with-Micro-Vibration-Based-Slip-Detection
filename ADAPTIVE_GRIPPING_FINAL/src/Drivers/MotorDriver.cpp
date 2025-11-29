@@ -60,7 +60,8 @@ void MotorDriver::init() {
     driver->microsteps(TMC_MICROSTEPS);
     driver->rms_current(TMC_RUN_CURRENT);
     driver->iholddelay(10);
-    driver->en_spreadCycle(true);
+    // Silent Mode (StealthChop) enabled globally
+    driver->en_spreadCycle(false); 
     driver->pwm_autoscale(true);
     driver->TCOOLTHRS(0xFFFFF);
     driver->SGTHRS(TMC_STALL_VALUE);
@@ -326,9 +327,10 @@ void MotorDriver::runHomingRoutine() {
         driver->pwm_autoscale(true);
         driver->SGTHRS(TMC_HOMING_THRESHOLD);
         
-        // Set speed (using internal vars to play nice with task)
+        // 1.5 Move AWAY first (safety clearing)
+        Serial.println("[MTR] Moving AWAY from home for 5 seconds...");
         positionMode = false;
-        targetSpeed = TMC_HOMING_SPEED * TMC_HOMING_DIRECTION;
+        targetSpeed = TMC_HOMING_SPEED * -TMC_HOMING_DIRECTION; // Opposite direction
         
         // Enable motor
         if (!enabled) {
@@ -337,6 +339,34 @@ void MotorDriver::runHomingRoutine() {
         }
         
         xSemaphoreGiveRecursive(driverMutex);
+        
+        // Run away for 5 seconds
+        delay(5000);
+
+        // Pause for 1 second
+        Serial.println("[MTR] Pausing for 1 second...");
+        positionMode = false;
+        targetSpeed = 0; // Stop
+        if (enabled) {
+           driver->VACTUAL(0); // Force stop immediately at driver level
+        }
+        xSemaphoreGiveRecursive(driverMutex); // Release mutex during delay
+        delay(1000);
+        
+        // Switch to Homing Direction
+        if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
+             Serial.println("[MTR] Moving TOWARDS home...");
+             targetSpeed = TMC_HOMING_SPEED * TMC_HOMING_DIRECTION; // Homing direction
+             
+             // Enable if disabled
+             if (!enabled) {
+                digitalWrite(TMC_EN_PIN, LOW);
+                enabled = true;
+             }
+             
+             xSemaphoreGiveRecursive(driverMutex);
+        }
+        
     } else {
         Serial.println("[MTR] Failed to take mutex for homing setup");
         return;
@@ -347,8 +377,8 @@ void MotorDriver::runHomingRoutine() {
     unsigned long startTime = millis();
     bool stalled = false;
     
-    // Initial delay to skip acceleration current spike
-    delay(5000); 
+    // Initial delay to skip acceleration current spike (Increased to 1s as requested for stabilization)
+    delay(2000); 
 
     while (millis() - startTime < TMC_HOMING_TIMEOUT_MS) {
         int32_t load = getLoad(); 
@@ -382,8 +412,8 @@ void MotorDriver::runHomingRoutine() {
         
         // Restore Current
         driver->rms_current(TMC_RUN_CURRENT);
-        // Restore SpreadCycle
-        driver->en_spreadCycle(true);
+        // Ensure Silent Mode (StealthChop) remains enabled
+        driver->en_spreadCycle(false);
         // Restore SGTHRS
         driver->SGTHRS(TMC_STALL_VALUE);
         

@@ -112,8 +112,8 @@ constexpr int TMC_MICROSTEPS = 1;     // 1/16 if not set, but user example says 
 // The user example says: driver.microsteps(1); // 1/16 Microstepping. This comment might be wrong or using some specific override. I will copy the user example value.
 
 // Speed Settings
-constexpr int TMC_MAX_SPEED = 100000;      // VACTUAL units
-constexpr int TMC_ACCELERATION = 2000;     // Speed increment per loop cycle
+constexpr int TMC_MAX_SPEED = 150000;      // VACTUAL units
+constexpr int TMC_ACCELERATION = 750;     // Speed increment per loop cycle
 constexpr int TMC_TASK_DELAY_MS = 10;      // Update loop frequency (approx 100Hz)
 constexpr BaseType_t TMC_TASK_CORE = 0;    // Run on Core 1
 

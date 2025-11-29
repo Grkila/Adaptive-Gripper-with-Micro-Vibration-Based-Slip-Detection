@@ -92,7 +92,7 @@ constexpr BaseType_t DEBUG_TASK_CORE = 0;
 // ============================================
 // I2C CONFIGURATION
 // ============================================
-constexpr uint32_t MAGNETIC_I2C_CLOCK_SPEED = 1000000;  // 1 MHz Fast Mode
+constexpr uint32_t MAGNETIC_I2C_CLOCK_SPEED = 1000000;  // 400 kHz Fast Mode (reduced from 1MHz for stability)
 
 // ============================================
 // TMC2209 MOTOR CONFIGURATION

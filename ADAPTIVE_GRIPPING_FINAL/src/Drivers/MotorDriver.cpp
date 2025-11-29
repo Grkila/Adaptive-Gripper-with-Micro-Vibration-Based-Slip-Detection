@@ -139,30 +139,29 @@ float MotorDriver::getTargetPosition() {
 }
 
 void MotorDriver::setTargetSpeed(int32_t speed) {
-    Serial.println("[MTR] setTargetSpeed enter");
+    // Serial.println("[MTR] setTargetSpeed enter");
     if (!initialized) {
-        Serial.println("[MTR] setTargetSpeed: not initialized!");
+        // Serial.println("[MTR] setTargetSpeed: not initialized!");
         return;
     }
-    Serial.println("[MTR] setTargetSpeed: taking mutex...");
+    // Serial.println("[MTR] setTargetSpeed: taking mutex...");
     if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-        Serial.println("[MTR] setTargetSpeed: mutex acquired");
+        // Serial.println("[MTR] setTargetSpeed: mutex acquired");
         positionMode = false;
         targetSpeed = speed;
         
         if (speed != 0 && !enabled) {
-            Serial.println("[MTR] setTargetSpeed: enabling motor");
+            // Serial.println("[MTR] setTargetSpeed: enabling motor");
             digitalWrite(TMC_EN_PIN, LOW);
             enabled = true;
         } else if (speed == 0 && currentSpeed == 0) {
-            Serial.println("[MTR] setTargetSpeed: disabling motor");
+            // Serial.println("[MTR] setTargetSpeed: disabling motor");
             digitalWrite(TMC_EN_PIN, HIGH);
             enabled = false;
         }
-        Serial.println("[MTR] setTargetSpeed: releasing mutex");
+        // Serial.println("[MTR] setTargetSpeed: releasing mutex");
         xSemaphoreGiveRecursive(driverMutex);
-        Serial.println("[MTR] setTargetSpeed: done");
-        //Serial.flush(); // Ensure output is sent
+        // Serial.println("[MTR] setTargetSpeed: done");
     } else {
         Serial.println("[MTR] setTargetSpeed: mutex FAILED!");
     }

@@ -50,6 +50,7 @@ volatile DebugData debugData = {false, 0.0f, 0, false, false};
 // FreeRTOS synchronization
 SemaphoreHandle_t mutexSlipData = NULL;
 SemaphoreHandle_t mutexFFTData = NULL;
+SemaphoreHandle_t mutexI2C = NULL;
 volatile SemaphoreHandle_t timerSemaphore = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 

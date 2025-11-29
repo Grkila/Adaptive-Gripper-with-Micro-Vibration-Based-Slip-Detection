@@ -55,6 +55,7 @@ extern volatile DebugData debugData;
 // FreeRTOS synchronization
 extern SemaphoreHandle_t mutexSlipData;
 extern SemaphoreHandle_t mutexFFTData;
+extern SemaphoreHandle_t mutexI2C; // I2C Bus Mutex
 extern volatile SemaphoreHandle_t timerSemaphore;
 extern portMUX_TYPE timerMux;
 

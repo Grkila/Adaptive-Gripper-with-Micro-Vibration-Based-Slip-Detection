@@ -1,4 +1,5 @@
 #include "MagneticSensor.h"
+#include "../Globals.h"
 #include <Arduino.h>
 
 namespace MagneticSensor {
@@ -15,11 +16,18 @@ namespace MagneticSensor {
     delay(100);
     
     // Initialize I2C
-    Wire.begin(SDA_PIN, SCL_PIN);
-    Wire.setClock(MAGNETIC_I2C_CLOCK_SPEED);
-    Serial.println("[I2C] Initialized at 1MHz");
+    if (mutexI2C != NULL && xSemaphoreTake(mutexI2C, pdMS_TO_TICKS(100)) == pdTRUE) {
+      Wire.begin(SDA_PIN, SCL_PIN);
+      Wire.setClock(MAGNETIC_I2C_CLOCK_SPEED);
+      xSemaphoreGive(mutexI2C);
+      Serial.println("[I2C] Initialized at 400kHz");
+    } else {
+       Serial.println("[I2C] Failed to take mutex for init!");
+       return false;
+    }
     
     // Initialize sensor structure
+    // Note: tlx493d_init doesn't use I2C, it just sets up the struct
     if (!tlx493d_init(&sensor, TLx493D_A1B6_e)) {
       Serial.println("[SENSOR] ERROR: tlx493d_init failed!");
       return false;
@@ -27,22 +35,35 @@ namespace MagneticSensor {
     Serial.println("[SENSOR] Structure initialized");
     
     // Initialize communication
-    if (!ifx::tlx493d::initCommunication(&sensor, Wire, TLx493D_IIC_ADDR_A0_e, true)) {
+    bool comm_ok = false;
+    if (mutexI2C != NULL && xSemaphoreTake(mutexI2C, pdMS_TO_TICKS(100)) == pdTRUE) {
+        comm_ok = ifx::tlx493d::initCommunication(&sensor, Wire, TLx493D_IIC_ADDR_A0_e, true);
+        xSemaphoreGive(mutexI2C);
+    }
+    if (!comm_ok) {
       Serial.println("[SENSOR] ERROR: initCommunication failed!");
       return false;
     }
     Serial.println("[SENSOR] Communication initialized");
     
     // Set default config
-    if (!tlx493d_setDefaultConfig(&sensor)) {
+    bool config_ok = false;
+    if (mutexI2C != NULL && xSemaphoreTake(mutexI2C, pdMS_TO_TICKS(100)) == pdTRUE) {
+        config_ok = tlx493d_setDefaultConfig(&sensor);
+        xSemaphoreGive(mutexI2C);
+    }
+    if (!config_ok) {
       Serial.println("[SENSOR] ERROR: setDefaultConfig failed!");
       return false;
     }
     Serial.println("[SENSOR] Default config set");
     
     // Configure for fast mode
-    tlx493d_setPowerMode(&sensor, TLx493D_FAST_MODE_e);
-    tlx493d_setMeasurement(&sensor, TLx493D_BxByBz_e);
+    if (mutexI2C != NULL && xSemaphoreTake(mutexI2C, pdMS_TO_TICKS(100)) == pdTRUE) {
+        tlx493d_setPowerMode(&sensor, TLx493D_FAST_MODE_e);
+        tlx493d_setMeasurement(&sensor, TLx493D_BxByBz_e);
+        xSemaphoreGive(mutexI2C);
+    }
     
     delay(100);
     Serial.println("[SENSOR] ✓ Ready");
@@ -50,7 +71,14 @@ namespace MagneticSensor {
   }
   
   bool read(double& x, double& y, double& z) {
-    return tlx493d_getMagneticField(&sensor, &x, &y, &z);
+    if (mutexI2C == NULL) return false;
+    
+    bool result = false;
+    if (xSemaphoreTake(mutexI2C, pdMS_TO_TICKS(2)) == pdTRUE) {
+      result = tlx493d_getMagneticField(&sensor, &x, &y, &z);
+      xSemaphoreGive(mutexI2C);
+    }
+    return result;
   }
   
   void calibrate(CalibrationData& calData) {

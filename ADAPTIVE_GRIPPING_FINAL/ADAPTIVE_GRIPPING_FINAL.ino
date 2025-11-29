@@ -63,6 +63,13 @@ void setup() {
   WiFi.mode(WIFI_OFF);
   btStop();
   
+  // Create I2C mutex FIRST
+  mutexI2C = xSemaphoreCreateMutex();
+  if (mutexI2C == NULL) {
+    Serial.println("[FATAL] Failed to create I2C mutex!");
+    while(1) delay(1000);
+  }
+  
   Serial.println("\n=== ADAPTIVE GRIPPING SYSTEM ===");
   Serial.println("Initializing modules...\n");
   
@@ -93,7 +100,8 @@ void setup() {
   timerSemaphore = xSemaphoreCreateBinary();
   timer = timerBegin(1000000);  // 1 MHz timer
   timerAttachInterrupt(timer, &magneticSensor_ISR);
-  timerAlarm(timer, SCAN_INTERVAL_US, true, 0);
+  timerAlarm(timer, SCAN_INTERVAL_US, true, 0); 
+
   
   // Initialize debug task (runs on Core 0)
   DebugTask::init();
@@ -118,7 +126,7 @@ void loop() {
   
   // Update debug data (non-blocking - actual print runs on Core 0)
   DebugTask::updateData();
-
+  
   // Yield to avoid starving other tasks/watchdog
   yield();
 }
@@ -215,25 +223,19 @@ void processLogic() {
   
   // Button 3: Up
   if (buttons.button_3 && !lastBtn3) {
-      Serial.println("[MAIN] Button 3 pressed - calling setTargetSpeed");
       MotorDriver::setTargetSpeed(-TMC_MAX_SPEED); 
-      Serial.println("[MAIN] Button 3 - setTargetSpeed returned");
   }
   lastBtn3 = buttons.button_3;
  
   // Button 4: Down
   if (buttons.button_4 && !lastBtn4) {
-      Serial.println("[MAIN] Button 4 pressed - calling setTargetSpeed");
       MotorDriver::setTargetSpeed(TMC_MAX_SPEED);
-      Serial.println("[MAIN] Button 4 - setTargetSpeed returned");
   }
   lastBtn4 = buttons.button_4;
   
   // Button 5: Stop
   if (buttons.button_5 && !lastBtn5) {
-      Serial.println("[MAIN] Button 5 pressed - calling setTargetSpeed(0)");
       MotorDriver::setTargetSpeed(0);
-      Serial.println("[MAIN] Button 5 - setTargetSpeed returned");
   }
   lastBtn5 = buttons.button_5;
 }

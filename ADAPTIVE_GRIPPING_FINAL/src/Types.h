@@ -70,6 +70,19 @@ struct DebugData {
   unsigned long scan_time_us;
   bool scan_time_exceeded;
   bool fft_ready_to_print;
+  
+  // Added metrics for debug
+  double mag_x;
+  double mag_y;
+  double mag_z;
+  double mag_magnitude;
+  double mag_x_filtered; // Low pass
+  double mag_y_filtered;
+  double mag_z_filtered;
+  
+  float current_mA;
+  int servo_position;
+  int gripping_mode;
 };
 
 // ============================================

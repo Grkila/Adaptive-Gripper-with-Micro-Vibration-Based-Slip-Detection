@@ -35,8 +35,8 @@ namespace FFTProcessor {
     bool x_complete = processSingleAxis(fftX_high_pass, data.x_high_pass);
     processSingleAxis(fftY_high_pass, data.y_high_pass);
     
-    // Signal debug task when FFT is ready (currently disabled)
-    if (false) {
+    // Signal debug task when FFT is ready
+    if (true) {
       if (x_complete) {
         counter++;
         if (counter >= 1) {

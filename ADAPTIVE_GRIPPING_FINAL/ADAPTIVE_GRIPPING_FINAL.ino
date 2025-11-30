@@ -62,7 +62,7 @@ void ARDUINO_ISR_ATTR magneticSensor_ISR() {
 // ============================================
 void setup() {
   // Initialize serial for debugging
-  Serial.begin(115200);
+  Serial.begin(921600);
   
   // Disable WiFi and Bluetooth to save power
   WiFi.mode(WIFI_OFF);

@@ -58,6 +58,11 @@ namespace GrippingFSM {
           slip_flag = false; 
         }
 
+        // If magnitude drops below threshold - margin, return to grasping to tighten
+        if (magnitude < (GRIP_MAGNITUDE_THRESHOLD - GRIP_MAGNITUDE_DROP_MARGIN)) {
+           gripping_mode = GRIPPING_MODE_GRASPING;
+        }
+
         // Allow user to override and grasp tighter
         if (buttons.button_1) {
           gripping_mode = GRIPPING_MODE_GRASPING;

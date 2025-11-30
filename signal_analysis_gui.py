@@ -180,7 +180,10 @@ class AdaptiveGripperGUI(QMainWindow):
         self.buffer_size = 1000
         self.data = {
             'mx': [], 'my': [], 'mz': [], 'mag': [], 
-            'cur': [], 'slip': [], 'timestamp': []
+            'rmx': [], 'rmy': [], 'rmz': [],
+            'cur': [], 'slip': [], 's_ind': [],
+            'srv': [], 'grp': [],
+            'timestamp': []
         }
         self.fft_data = {'freqs': [], 'mags': []}
         self.recorded_events = [] # For start/end of segments (Labeling)
@@ -276,37 +279,8 @@ class AdaptiveGripperGUI(QMainWindow):
         grp_source.setLayout(v_source)
         sidebar_layout.addWidget(grp_source)
 
-        # 3. Telemetry Control (Commands)
-        grp_tele = QGroupBox("Telemetry Control")
-        v_tele = QVBoxLayout()
-        
-        self.chk_cmd_mag = QCheckBox("Mag Filtered")
-        self.chk_cmd_mag.toggled.connect(lambda c: self.send_stream_command("mag_filtered", c))
-        
-        self.chk_cmd_raw = QCheckBox("Mag Raw")
-        self.chk_cmd_raw.toggled.connect(lambda c: self.send_stream_command("mag_raw", c))
-        
-        self.chk_cmd_cur = QCheckBox("Current")
-        self.chk_cmd_cur.toggled.connect(lambda c: self.send_stream_command("current", c))
-        
-        self.chk_cmd_slip = QCheckBox("Slip")
-        self.chk_cmd_slip.toggled.connect(lambda c: self.send_stream_command("slip", c))
-        
-        self.chk_cmd_srv = QCheckBox("Servo/Mode")
-        self.chk_cmd_srv.toggled.connect(lambda c: self.send_stream_command("servo", c))
-        
-        self.chk_cmd_fft = QCheckBox("FFT Mode (Exclusive)")
-        self.chk_cmd_fft.toggled.connect(lambda c: self.send_stream_command("fft", c))
-        
-        v_tele.addWidget(self.chk_cmd_mag)
-        v_tele.addWidget(self.chk_cmd_raw)
-        v_tele.addWidget(self.chk_cmd_cur)
-        v_tele.addWidget(self.chk_cmd_slip)
-        v_tele.addWidget(self.chk_cmd_srv)
-        v_tele.addWidget(self.chk_cmd_fft)
-        
-        grp_tele.setLayout(v_tele)
-        sidebar_layout.addWidget(grp_tele)
+        # 3. Telemetry & Plots
+        self.setup_telemetry_ui(sidebar_layout)
 
         # 4. FFT Configuration
         grp_fft_cfg = QGroupBox("FFT Configuration")
@@ -331,26 +305,7 @@ class AdaptiveGripperGUI(QMainWindow):
         grp_fft_cfg.setLayout(v_fft_cfg)
         sidebar_layout.addWidget(grp_fft_cfg)
 
-        # 5. Plot Overlays
-        grp_sig = QGroupBox("Plot Overlays")
-        v_sig = QVBoxLayout()
-        self.check_mx = QCheckBox("Mag X (Red)")
-        self.check_my = QCheckBox("Mag Y (Green)")
-        self.check_mz = QCheckBox("Mag Z (Blue)")
-        self.check_mag = QCheckBox("Magnitude (White)")
-        self.check_cur = QCheckBox("Current (Yellow)")
-        
-        self.check_mag.setChecked(True)
-        
-        v_sig.addWidget(self.check_mx)
-        v_sig.addWidget(self.check_my)
-        v_sig.addWidget(self.check_mz)
-        v_sig.addWidget(self.check_mag)
-        v_sig.addWidget(self.check_cur)
-        grp_sig.setLayout(v_sig)
-        sidebar_layout.addWidget(grp_sig)
-
-        # 6. Analysis
+        # 5. Analysis
         grp_ana = QGroupBox("Analysis")
         v_ana = QVBoxLayout()
         self.lbl_freq = QLabel("Dominant Freq: 0.0 Hz")
@@ -359,7 +314,38 @@ class AdaptiveGripperGUI(QMainWindow):
         grp_ana.setLayout(v_ana)
         sidebar_layout.addWidget(grp_ana)
 
-        # 7. Data Actions
+        # 7. Plot Settings (Y-Axis)
+        grp_plot = QGroupBox("Plot Settings")
+        v_plot = QVBoxLayout()
+        
+        self.chk_auto_scale = QCheckBox("Auto Scale Y-Axis")
+        self.chk_auto_scale.setChecked(True)
+        self.chk_auto_scale.toggled.connect(self.toggle_axis_scale)
+        v_plot.addWidget(self.chk_auto_scale)
+        
+        h_range = QHBoxLayout()
+        self.spin_y_min = QSpinBox()
+        self.spin_y_min.setRange(-1000, 1000)
+        self.spin_y_min.setValue(-10)
+        self.spin_y_min.setSuffix(" min")
+        self.spin_y_min.setEnabled(False)
+        self.spin_y_min.valueChanged.connect(self.update_axis_range)
+        
+        self.spin_y_max = QSpinBox()
+        self.spin_y_max.setRange(-1000, 1000)
+        self.spin_y_max.setValue(10)
+        self.spin_y_max.setSuffix(" max")
+        self.spin_y_max.setEnabled(False)
+        self.spin_y_max.valueChanged.connect(self.update_axis_range)
+
+        h_range.addWidget(self.spin_y_min)
+        h_range.addWidget(self.spin_y_max)
+        v_plot.addLayout(h_range)
+        
+        grp_plot.setLayout(v_plot)
+        sidebar_layout.addWidget(grp_plot)
+
+        # 8. Data Actions
         grp_act = QGroupBox("Data & Labeling")
         v_act = QVBoxLayout()
         
@@ -444,6 +430,80 @@ class AdaptiveGripperGUI(QMainWindow):
         
         main_layout.addWidget(self.tabs, stretch=1)
     
+    def setup_telemetry_ui(self, layout):
+        grp = QGroupBox("Telemetry & Plotting")
+        vbox = QVBoxLayout()
+        vbox.setSpacing(10)
+        
+        # Helper to create a group
+        def create_stream_group(label, command, plot_keys):
+            # Main Checkbox (Command)
+            chk_cmd = QCheckBox(label)
+            chk_cmd.toggled.connect(lambda c: self.send_stream_command(command, c))
+            
+            # Sub Checkboxes (Plotting)
+            sub_layout = QVBoxLayout()
+            sub_layout.setContentsMargins(20, 0, 0, 0)
+            
+            sub_checks = {}
+            for key, name in plot_keys.items():
+                chk = QCheckBox(name)
+                chk.setChecked(False) # Default off
+                chk.setVisible(False) # Initially hidden until parent enabled? Or just disabled
+                chk.toggled.connect(lambda c, k=key: self.toggle_plot_visibility(k, c))
+                sub_layout.addWidget(chk)
+                sub_checks[key] = chk
+                
+            # Link visibility/enable
+            def on_main_toggle(checked):
+                for chk in sub_checks.values():
+                    chk.setVisible(checked)
+                    if not checked:
+                        chk.setChecked(False)
+            
+            chk_cmd.toggled.connect(on_main_toggle)
+            
+            vbox.addWidget(chk_cmd)
+            vbox.addLayout(sub_layout)
+            return chk_cmd, sub_checks
+
+        # 1. Mag Filtered
+        self.grp_mag, self.chk_mag = create_stream_group("Mag Filtered", "mag_filtered", {
+            'mx': "Mag X", 'my': "Mag Y", 'mz': "Mag Z", 'mag': "Magnitude"
+        })
+        
+        # 2. Mag Raw
+        self.grp_raw, self.chk_raw = create_stream_group("Mag Raw", "mag_raw", {
+            'rmx': "Raw X", 'rmy': "Raw Y", 'rmz': "Raw Z"
+        })
+
+        # 3. Current
+        self.grp_cur, self.chk_cur = create_stream_group("Current", "current", {
+            'cur': "Current (mA)"
+        })
+
+        # 4. Slip
+        self.grp_slip, self.chk_slip = create_stream_group("Slip Detection", "slip", {
+            'slip': "Slip State", 's_ind': "Slip Indicator"
+        })
+
+        # 5. Servo
+        self.grp_srv, self.chk_srv = create_stream_group("Servo & Mode", "servo", {
+            'srv': "Servo Pos", 'grp': "Grip State"
+        })
+        
+        # 6. FFT Mode
+        self.chk_cmd_fft = QCheckBox("FFT Mode (Exclusive)")
+        self.chk_cmd_fft.toggled.connect(lambda c: self.send_stream_command("fft", c))
+        vbox.addWidget(self.chk_cmd_fft)
+
+        grp.setLayout(vbox)
+        layout.addWidget(grp)
+
+    def toggle_plot_visibility(self, key, visible):
+        if key in self.curves:
+            self.curves[key].setVisible(visible)
+
     def send_stream_command(self, key, enabled):
         if self.is_connected and self.serial_thread:
             cmd = json.dumps({key: enabled})
@@ -451,16 +511,62 @@ class AdaptiveGripperGUI(QMainWindow):
             # Log sent command
             self.text_raw.append(f">> SENT: {cmd}")
 
+    def toggle_axis_scale(self, checked):
+        # Enable/Disable spinboxes
+        self.spin_y_min.setEnabled(not checked)
+        self.spin_y_max.setEnabled(not checked)
+        
+        if checked:
+            self.plot_time.enableAutoRange(axis='y')
+        else:
+            self.update_axis_range()
+
+    def update_axis_range(self):
+        if not self.chk_auto_scale.isChecked():
+            ymin = self.spin_y_min.value()
+            ymax = self.spin_y_max.value()
+            if ymin < ymax:
+                self.plot_time.setYRange(ymin, ymax)
+
     def setup_plotting(self):
         # Create curves
         self.curves = {}
-        # Colors: R, G, B, W, Y
-        self.curves['mx'] = self.plot_time.plot(pen=pg.mkPen(COLOR_ACCENT_2, width=2), name='Mag X')
-        self.curves['my'] = self.plot_time.plot(pen=pg.mkPen(COLOR_ACCENT_3, width=2), name='Mag Y')
-        self.curves['mz'] = self.plot_time.plot(pen=pg.mkPen(COLOR_ACCENT_1, width=2), name='Mag Z')
-        self.curves['mag'] = self.plot_time.plot(pen=pg.mkPen('#ffffff', width=2), name='Magnitude')
-        self.curves['cur'] = self.plot_time.plot(pen=pg.mkPen(COLOR_ACCENT_4, width=2), name='Current')
+        # Colors
+        c_mx = COLOR_ACCENT_2 # Pink
+        c_my = COLOR_ACCENT_3 # Green
+        c_mz = COLOR_ACCENT_1 # Cyan
+        c_mag = "#ffffff"     # White
+        c_cur = COLOR_ACCENT_4 # Orange
+        c_raw = "#777777"     # Grey
+        c_slip = "#ff0000"    # Red
+        c_srv = COLOR_ACCENT_5 # Purple
         
+        # Mag Filtered
+        self.curves['mx'] = self.plot_time.plot(pen=pg.mkPen(c_mx, width=2), name='Mag X')
+        self.curves['my'] = self.plot_time.plot(pen=pg.mkPen(c_my, width=2), name='Mag Y')
+        self.curves['mz'] = self.plot_time.plot(pen=pg.mkPen(c_mz, width=2), name='Mag Z')
+        self.curves['mag'] = self.plot_time.plot(pen=pg.mkPen(c_mag, width=2), name='Magnitude')
+        
+        # Mag Raw
+        self.curves['rmx'] = self.plot_time.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw X')
+        self.curves['rmy'] = self.plot_time.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw Y')
+        self.curves['rmz'] = self.plot_time.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw Z')
+
+        # Current
+        self.curves['cur'] = self.plot_time.plot(pen=pg.mkPen(c_cur, width=2), name='Current')
+        
+        # Slip
+        self.curves['slip'] = self.plot_time.plot(pen=pg.mkPen(c_slip, width=2), name='Slip State')
+        self.curves['s_ind'] = self.plot_time.plot(pen=pg.mkPen(c_slip, width=1, style=Qt.PenStyle.DotLine), name='Slip Ind')
+        
+        # Servo
+        self.curves['srv'] = self.plot_time.plot(pen=pg.mkPen(c_srv, width=2), name='Servo')
+        self.curves['grp'] = self.plot_time.plot(pen=pg.mkPen(c_srv, width=1, style=Qt.PenStyle.DashLine), name='Grip')
+        
+        # Initially hide all
+        for c in self.curves.values():
+            c.setVisible(False)
+
         self.curve_fft = self.plot_fft.plot(pen=pg.mkPen(COLOR_ACCENT_1, width=2, fillLevel=0, brush=(0, 188, 212, 50)))
 
     def apply_styles(self):
@@ -567,8 +673,14 @@ class AdaptiveGripperGUI(QMainWindow):
         # Helper to safely append
         ts = data.get('t', 0)
         
-        for key in ['mx', 'my', 'mz', 'mag', 'cur', 'slip']:
-            val = data.get(key, 0.0)
+        # All keys we track
+        keys = ['mx', 'my', 'mz', 'mag', 
+                'rmx', 'rmy', 'rmz', 
+                'cur', 'slip', 's_ind', 
+                'srv', 'grp']
+                
+        for key in keys:
+            val = data.get(key, 0.0) # Default to 0 if missing
             self.data[key].append(val)
             
         self.data['timestamp'].append(ts)
@@ -597,37 +709,11 @@ class AdaptiveGripperGUI(QMainWindow):
 
         # 2. Update Time Plot
         if len(self.data['timestamp']) > 1:
-            # Update visibility based on checkboxes
-            if self.check_mx.isChecked():
-                self.curves['mx'].setData(self.data['mx'])
-                self.curves['mx'].setVisible(True)
-            else:
-                self.curves['mx'].setVisible(False)
-                
-            if self.check_my.isChecked():
-                self.curves['my'].setData(self.data['my'])
-                self.curves['my'].setVisible(True)
-            else:
-                self.curves['my'].setVisible(False)
-                
-            if self.check_mz.isChecked():
-                self.curves['mz'].setData(self.data['mz'])
-                self.curves['mz'].setVisible(True)
-            else:
-                self.curves['mz'].setVisible(False)
-                
-            if self.check_mag.isChecked():
-                self.curves['mag'].setData(self.data['mag'])
-                self.curves['mag'].setVisible(True)
-            else:
-                self.curves['mag'].setVisible(False)
-                
-            if self.check_cur.isChecked():
-                self.curves['cur'].setData(self.data['cur'])
-                self.curves['cur'].setVisible(True)
-            else:
-                self.curves['cur'].setVisible(False)
-
+            # Update data for all curves (visibility handled by checkboxes)
+            for key, curve in self.curves.items():
+                if key in self.data and curve.isVisible():
+                    curve.setData(self.data[key])
+                    
         # 3. Update FFT Plot
         # If we have external FFT data, use it.
         # Otherwise, if in SIM mode or default, we might calculate it (but prompt said take from controller)
@@ -661,7 +747,7 @@ class AdaptiveGripperGUI(QMainWindow):
                 with open(path, 'w', newline='') as f:
                     writer = csv.writer(f)
                     # Header
-                    keys = ['timestamp', 'mx', 'my', 'mz', 'mag', 'cur', 'slip']
+                    keys = ['timestamp', 'mx', 'my', 'mz', 'mag', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']
                     writer.writerow(keys + ['label'])
                     
                     # Create a lookup for events
@@ -699,21 +785,12 @@ class AdaptiveGripperGUI(QMainWindow):
                         # Parse row
                         try:
                             t = float(row.get('timestamp', 0))
-                            mx = float(row.get('mx', 0))
-                            my = float(row.get('my', 0))
-                            mz = float(row.get('mz', 0))
-                            mag = float(row.get('mag', 0))
-                            cur = float(row.get('cur', 0))
-                            slip = float(row.get('slip', 0))
                             lbl = row.get('label', '')
+
+                            for k in ['mx', 'my', 'mz', 'mag', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']:
+                                self.data[k].append(float(row.get(k, 0)))
                             
                             self.data['timestamp'].append(t)
-                            self.data['mx'].append(mx)
-                            self.data['my'].append(my)
-                            self.data['mz'].append(mz)
-                            self.data['mag'].append(mag)
-                            self.data['cur'].append(cur)
-                            self.data['slip'].append(slip)
                             
                             if lbl:
                                 self.recorded_events.append({'timestamp': t, 'label': lbl})

@@ -12,12 +12,12 @@
 namespace DebugTask {
   struct DebugConfig {
     bool stream_mag_raw = false;
-    bool stream_mag_filtered = true; 
-    bool stream_current = true;
-    bool stream_servo = true;
-    bool stream_slip = true;
+    bool stream_mag_filtered = false; 
+    bool stream_current = false;
+    bool stream_servo = false;
+    bool stream_slip = false;
     bool stream_fft = false; // Exclusive mode
-    bool stream_system = true; // Scan time, mode
+    bool stream_system = false; // Scan time, mode
   };
 
   extern DebugConfig config;

@@ -99,7 +99,6 @@ constexpr uint32_t MAGNETIC_I2C_CLOCK_SPEED = 1000000;  // 400 kHz Fast Mode (re
 // ============================================
 constexpr int TMC_RX_PIN = 5;    // TMC2209 PDN_UART
 constexpr int TMC_TX_PIN = 17;    // Connect to RX via 1k Resistor
-//constexpr int TMC_DIAG_PIN = 15;  // StallGuard output
 constexpr int TMC_EN_PIN = 18;    // Enable pin
 constexpr int TMC_STEP_PIN = 16;
 constexpr int TMC_DIR_PIN = 15;
@@ -107,22 +106,20 @@ constexpr float TMC_R_SENSE = 0.11f;
 constexpr uint8_t TMC_DRIVER_ADDR = 0b00;
 constexpr int TMC_STALL_VALUE = 3; // Stall Sensitivity (0-255)
 
-constexpr int TMC_RUN_CURRENT = 600; // mA
-constexpr int TMC_MICROSTEPS = 1;     
+constexpr int TMC_RUN_CURRENT = 1000; // mA
+constexpr int TMC_MICROSTEPS = 16;     
 
 // Speed Settings
-constexpr int TMC_MAX_SPEED = 5000000;      // Steps per second (Max Hz) - Previously calculated as ~53625
-constexpr int TMC_ACCELERATION = 500000;   // Steps per second^2 - Previously calculated as ~53625
-constexpr int TMC_TASK_DELAY_MS = 10;      // Update loop frequency (approx 100Hz)
-constexpr BaseType_t TMC_TASK_CORE = 0;    // Run on Core 1
+constexpr int TMC_MAX_SPEED = 7000;      // Steps per second
+constexpr int TMC_ACCELERATION = 5000;   // Steps per second^2
 
 // Automatic Homing Configuration
-constexpr int TMC_HOMING_CURRENT = 200;    // mA (Limit to 0.2A as requested)
-constexpr int TMC_HOMING_SPEED = 35000;    // Steps per second (Homing Hz) - Approx 50% of previous VACTUAL-equivalent
-constexpr int TMC_HOMING_THRESHOLD = 50;   // StallGuard threshold for homing (adjust as needed)
+constexpr int TMC_HOMING_CURRENT = 200;    // mA
+constexpr int TMC_HOMING_SPEED = 5000;    // Steps per second
+constexpr int TMC_HOMING_THRESHOLD = 50;   // StallGuard threshold for homing
 constexpr int TMC_HOMING_DIRECTION = -1;    // 1 for forward/up, -1 for backward/down
 constexpr int TMC_HOMING_TIMEOUT_MS = 1000000; // Safety timeout
 
-constexpr float TMC_STEPS_PER_MM = 42560.0f; // 1000000 steps per mm
+constexpr float TMC_STEPS_PER_MM = 2560.0f; // https://blog.prusa3d.com/calculator_3416/#MotorStuffSPML 1.8deg motor m8 metric screw
 
 #endif // CONFIG_H

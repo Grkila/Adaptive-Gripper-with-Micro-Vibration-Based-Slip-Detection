@@ -228,13 +228,13 @@ void processLogic() {
   
   // Button 3: Up
   if (buttons.button_3 && !lastBtn3) {
-      MotorDriver::moveToMM(100);
+      MotorDriver::moveRelative(1000000);
   }
   lastBtn3 = buttons.button_3;
  
   // Button 4: Down
   if (buttons.button_4 && !lastBtn4) {
-      MotorDriver::moveToMM(1);
+      MotorDriver::moveTo(100);
   }
   lastBtn4 = buttons.button_4;
   

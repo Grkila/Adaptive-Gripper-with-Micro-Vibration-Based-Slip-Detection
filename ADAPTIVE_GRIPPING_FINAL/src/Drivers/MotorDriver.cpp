@@ -4,14 +4,11 @@
 
 // Static member initialization
 volatile bool MotorDriver::enabled = false;
-volatile bool MotorDriver::initialized = false;  // Track init state
+volatile bool MotorDriver::initialized = false;
 TMC2209Stepper* MotorDriver::driver = nullptr;
 FastAccelStepperEngine MotorDriver::engine = FastAccelStepperEngine();
 FastAccelStepper* MotorDriver::stepper = nullptr;
 SemaphoreHandle_t MotorDriver::driverMutex = NULL;
-
-// Constants
-constexpr float VACTUAL_TO_HZ = 0.715f; // Approx conversion 1 VACTUAL unit ~ 0.715 steps/sec
 
 void MotorDriver::init() {
     Serial.println("[MTR] init() starting...");
@@ -29,11 +26,12 @@ void MotorDriver::init() {
     Serial2.begin(115200, SERIAL_8N1, TMC_RX_PIN, TMC_TX_PIN);
     delay(100); 
 
-    // 3. Setup Pins (EN pin handled by FastAccelStepper, but we init here too)
+    // 3. Setup Pins
+    // FastAccelStepper handles pins, but we ensure EN is initially high (disabled)
     pinMode(TMC_EN_PIN, OUTPUT);
-    digitalWrite(TMC_EN_PIN, HIGH); // Disable initially
+    digitalWrite(TMC_EN_PIN, HIGH);
 
-    // 4. Create driver instance
+    // 4. Create and Configure TMC2209 Driver (UART)
     Serial.println("[MTR] Creating TMC2209Stepper object...");
     driver = new TMC2209Stepper(&Serial2, TMC_R_SENSE, TMC_DRIVER_ADDR);
     if (driver == nullptr) {
@@ -41,23 +39,25 @@ void MotorDriver::init() {
         return;
     }
     
-    // 5. Driver Setup via UART
     Serial.println("[MTR] Configuring driver...");
     driver->begin();
     driver->toff(5);
+    driver->mstep_reg_select(true); // 1. Tell driver to IGNORE physical MS1/MS2 pins
     driver->microsteps(TMC_MICROSTEPS);
     driver->rms_current(TMC_RUN_CURRENT);
     driver->iholddelay(10);
-    driver->en_spreadCycle(false); // StealthChop
+    driver->en_spreadCycle(true); // StealthChop
     driver->pwm_autoscale(true);
     driver->TCOOLTHRS(0xFFFFF);
     driver->SGTHRS(TMC_STALL_VALUE);
     
     // IMPORTANT: Set VACTUAL to 0 to enable STEP/DIR control
     driver->VACTUAL(0);
+    Serial.print("[MTR] Driver sees Microsteps: ");
+    Serial.println(driver->microsteps()); 
     Serial.println("[MTR] Driver configuration complete (STEP/DIR mode)");
 
-    // 6. FastAccelStepper Setup
+    // 5. FastAccelStepper Setup
     Serial.println("[MTR] Initializing FastAccelStepper...");
     engine.init();
     stepper = engine.stepperConnectToPin(TMC_STEP_PIN);
@@ -67,9 +67,10 @@ void MotorDriver::init() {
         stepper->setEnablePin(TMC_EN_PIN);
         stepper->setAutoEnable(true); // Automatically manage EN pin
         
-        // Convert old acceleration units to steps/s^2 if needed, or use directly
-        // Assuming TMC_ACCELERATION in Config.h is suitable for FastAccelStepper directly
+        // Configuration from Config.h
         stepper->setAcceleration(TMC_ACCELERATION); 
+        stepper->setSpeedInHz(TMC_MAX_SPEED);
+        
         Serial.println("[MTR] FastAccelStepper initialized");
     } else {
         Serial.println("[MTR-FATAL] Failed to create stepper!");
@@ -100,18 +101,16 @@ long MotorDriver::getTargetPosition() {
 void MotorDriver::setTargetSpeed(int32_t speed) {
     if (!stepper) return;
     
-    // Critical section if needed, but FAS is thread-safeish for simple calls
-    // Speed control logic
     if (speed == 0) {
-        stepper->stopMove(); // Ramps down to stop
+        stepper->stopMove();
         enabled = false;
     } else {
-        // Use TMC_MAX_SPEED from Config.h as the cap
-        float speedHz = abs(speed) * VACTUAL_TO_HZ;
-        if (speedHz > TMC_MAX_SPEED) speedHz = TMC_MAX_SPEED;
-        if (speedHz < 100) speedHz = 100; // Minimum speed
+        // speed is in steps/s
+        uint32_t speedAbs = abs(speed);
+        if (speedAbs > TMC_MAX_SPEED) speedAbs = TMC_MAX_SPEED;
+        if (speedAbs < 100) speedAbs = 100; // Minimum speed safety?
         
-        stepper->setSpeedInHz((uint32_t)speedHz);
+        stepper->setSpeedInHz(speedAbs);
         
         if (speed > 0) {
             stepper->runForward();
@@ -146,7 +145,7 @@ int32_t MotorDriver::getLoad() {
 }
 
 void MotorDriver::runHomingRoutine() {
-    Serial.println("[MTR] Homing routine starting (STEP/DIR mode)...");
+    Serial.println("[MTR] Homing routine starting...");
     if (!initialized || !stepper) {
         Serial.println("[MTR] Not initialized, cannot home.");
         return;
@@ -163,17 +162,16 @@ void MotorDriver::runHomingRoutine() {
     // 1.5 Move AWAY first
     Serial.println("[MTR] Moving AWAY from home...");
     
-    float homingSpeedHz = TMC_HOMING_SPEED * VACTUAL_TO_HZ;
-    stepper->setSpeedInHz((uint32_t)homingSpeedHz);
+    stepper->setSpeedInHz(TMC_HOMING_SPEED);
     
     if (TMC_HOMING_DIRECTION > 0) {
-        stepper->runBackward(); // Opposite to homing
+        stepper->runBackward(); 
     } else {
         stepper->runForward();
     }
     
     delay(5000); // Run for 5 seconds
-    stepper->forceStop(); // Stop immediately
+    stepper->forceStop(); 
     delay(1000);
 
     // 2. Move TOWARDS home and check Stall
@@ -199,7 +197,6 @@ void MotorDriver::runHomingRoutine() {
              break;
         }
         
-        // Also check if motor stopped for some other reason
         if (!stepper->isRunning()) break;
         
         delay(10);
@@ -222,13 +219,18 @@ void MotorDriver::runHomingRoutine() {
     }
     
     Serial.println("[MTR] Homing routine complete.");
+    stepper->setSpeedInHz(TMC_MAX_SPEED);
+    stepper->setAcceleration(TMC_ACCELERATION);
 }
+
 long MotorDriver::mmToSteps(float mm) {
     return (long)round(mm * TMC_STEPS_PER_MM);
 }
+
 void MotorDriver::moveToMM(float mm) {
      moveTo(mmToSteps(mm));
 }
+
 void MotorDriver::moveRelativeMM(float mm) {
     moveRelative(mmToSteps(mm));
-}   
+}

@@ -9,7 +9,7 @@ import serial.tools.list_ports
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QComboBox, QCheckBox, QFileDialog, 
                              QGroupBox, QSplitter, QFrame, QScrollArea, QRadioButton, QButtonGroup,
-                             QTabWidget, QTextEdit, QSpinBox, QDoubleSpinBox)
+                             QTabWidget, QTextEdit, QSpinBox, QDoubleSpinBox, QSlider)
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QColor, QPalette, QFont
 import pyqtgraph as pg
@@ -189,6 +189,16 @@ class AdaptiveGripperGUI(QMainWindow):
         self.recorded_events = [] # For start/end of segments (Labeling)
         self.current_segment_start = None
         
+        # Recording & Replay
+        self.is_recording = False
+        self.recording_data = [] # List of dicts for the current recording session
+        self.replay_data = []    # List of dicts for replay
+        self.replay_index = 0
+        self.replay_buffer = {
+            'mx': [], 'my': [], 'mz': [], 'mag': [], 
+            'cur': [], 'slip': [], 'srv': [], 'grp': [], 'timestamp': []
+        }
+        
         self.serial_thread = None
         self.sim_generator = SignalGenerator()
         self.is_simulating = False
@@ -203,6 +213,10 @@ class AdaptiveGripperGUI(QMainWindow):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_loop)
         self.timer.start(33) # ~30 FPS
+
+        # Timer for replay
+        self.replay_timer = QTimer()
+        self.replay_timer.timeout.connect(self.update_replay_loop)
 
     def setup_ui(self):
         # Central Widget & Main Layout
@@ -365,6 +379,14 @@ class AdaptiveGripperGUI(QMainWindow):
         grp_act = QGroupBox("Data & Labeling")
         v_act = QVBoxLayout()
         
+        # Recording Controls
+        hbox_rec = QHBoxLayout()
+        self.btn_record = QPushButton("Start Recording")
+        self.btn_record.setStyleSheet(f"background-color: {COLOR_PANEL}; color: {COLOR_ACCENT_3};")
+        self.btn_record.clicked.connect(self.toggle_recording)
+        hbox_rec.addWidget(self.btn_record)
+        v_act.addLayout(hbox_rec)
+
         hbox_label = QHBoxLayout()
         self.btn_success = QPushButton("Mark Success")
         self.btn_success.setStyleSheet(f"background-color: {COLOR_ACCENT_3}; color: #000;")
@@ -433,7 +455,11 @@ class AdaptiveGripperGUI(QMainWindow):
         
         layout_viz.addWidget(splitter)
         
-        # Tab 2: Raw Output
+        # Tab 2: Replay
+        self.tab_replay = QWidget()
+        self.setup_replay_ui(self.tab_replay)
+        
+        # Tab 3: Raw Output
         self.tab_raw = QWidget()
         layout_raw = QVBoxLayout(self.tab_raw)
         self.text_raw = QTextEdit()
@@ -442,10 +468,81 @@ class AdaptiveGripperGUI(QMainWindow):
         layout_raw.addWidget(self.text_raw)
         
         self.tabs.addTab(tab_viz, "Visualizer")
+        self.tabs.addTab(self.tab_replay, "Replay")
         self.tabs.addTab(self.tab_raw, "Raw Serial")
         
         main_layout.addWidget(self.tabs, stretch=1)
     
+    def setup_replay_ui(self, parent):
+        layout = QVBoxLayout(parent)
+        
+        # Plot
+        self.plot_replay = pg.PlotWidget(title="Replay Data")
+        self.plot_replay.setBackground(COLOR_BG)
+        self.plot_replay.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_replay.getAxis('bottom').setPen(COLOR_TEXT)
+        self.plot_replay.getAxis('left').setPen(COLOR_TEXT)
+        layout.addWidget(self.plot_replay)
+        
+        # Replay Curves
+        self.replay_curves = {}
+        # Same colors as main
+        c_mx = COLOR_ACCENT_2 
+        c_my = COLOR_ACCENT_3 
+        c_mz = COLOR_ACCENT_1
+        c_mag = "#ffffff"
+        c_cur = COLOR_ACCENT_4
+        c_raw = "#777777"
+        c_slip = "#ff0000"
+        c_srv = COLOR_ACCENT_5
+        
+        # Mag Filtered
+        self.replay_curves['mx'] = self.plot_replay.plot(pen=pg.mkPen(c_mx, width=2), name='Mag X')
+        self.replay_curves['my'] = self.plot_replay.plot(pen=pg.mkPen(c_my, width=2), name='Mag Y')
+        self.replay_curves['mz'] = self.plot_replay.plot(pen=pg.mkPen(c_mz, width=2), name='Mag Z')
+        self.replay_curves['mag'] = self.plot_replay.plot(pen=pg.mkPen(c_mag, width=2), name='Magnitude')
+        
+        # Mag Raw
+        self.replay_curves['rmx'] = self.plot_replay.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw X')
+        self.replay_curves['rmy'] = self.plot_replay.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw Y')
+        self.replay_curves['rmz'] = self.plot_replay.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw Z')
+
+        # Current
+        self.replay_curves['cur'] = self.plot_replay.plot(pen=pg.mkPen(c_cur, width=2), name='Current')
+        
+        # Slip
+        self.replay_curves['slip'] = self.plot_replay.plot(pen=pg.mkPen(c_slip, width=2), name='Slip State')
+        self.replay_curves['s_ind'] = self.plot_replay.plot(pen=pg.mkPen(c_slip, width=1, style=Qt.PenStyle.DotLine), name='Slip Ind')
+        
+        # Servo
+        self.replay_curves['srv'] = self.plot_replay.plot(pen=pg.mkPen(c_srv, width=2), name='Servo')
+        self.replay_curves['grp'] = self.plot_replay.plot(pen=pg.mkPen(c_srv, width=1, style=Qt.PenStyle.DashLine), name='Grip')
+
+        # Initially hide all
+        for c in self.replay_curves.values():
+            c.setVisible(False)
+        
+        # Controls
+        h_controls = QHBoxLayout()
+        
+        self.btn_load_replay = QPushButton("Load File")
+        self.btn_load_replay.clicked.connect(self.load_replay_file)
+        h_controls.addWidget(self.btn_load_replay)
+        
+        self.btn_play_replay = QPushButton("Play")
+        self.btn_play_replay.clicked.connect(self.toggle_replay)
+        h_controls.addWidget(self.btn_play_replay)
+        
+        self.slider_replay = QSlider(Qt.Orientation.Horizontal)
+        self.slider_replay.setRange(0, 100)
+        self.slider_replay.sliderMoved.connect(self.on_replay_slider_move)
+        h_controls.addWidget(self.slider_replay)
+        
+        self.lbl_replay_time = QLabel("0.0s")
+        h_controls.addWidget(self.lbl_replay_time)
+        
+        layout.addLayout(h_controls)
+
     def setup_telemetry_ui(self, layout):
         grp = QGroupBox("Telemetry & Plotting")
         vbox = QVBoxLayout()
@@ -519,6 +616,8 @@ class AdaptiveGripperGUI(QMainWindow):
     def toggle_plot_visibility(self, key, visible):
         if key in self.curves:
             self.curves[key].setVisible(visible)
+        if key in self.replay_curves:
+            self.replay_curves[key].setVisible(visible)
 
     def send_stream_command(self, key, enabled):
         if self.is_connected and self.serial_thread:
@@ -537,6 +636,7 @@ class AdaptiveGripperGUI(QMainWindow):
             # Auto Scale ON
             self.chk_center_dc.setChecked(False) # Mutually exclusive
             self.plot_time.enableAutoRange(axis='y')
+            self.plot_replay.enableAutoRange(axis='y')
         else:
             # Auto Scale OFF - check if Center DC is ON, otherwise Manual
             if not self.chk_center_dc.isChecked():
@@ -553,6 +653,7 @@ class AdaptiveGripperGUI(QMainWindow):
             self.spin_y_max.setEnabled(False)
             # Disable auto range so we can set it manually in loop
             self.plot_time.disableAutoRange(axis='y')
+            self.plot_replay.disableAutoRange(axis='y')
         else:
             # Center DC OFF
             self.spin_center_range.setEnabled(False)
@@ -568,6 +669,7 @@ class AdaptiveGripperGUI(QMainWindow):
             ymax = self.spin_y_max.value()
             if ymin < ymax:
                 self.plot_time.setYRange(ymin, ymax)
+                self.plot_replay.setYRange(ymin, ymax)
 
     def setup_plotting(self):
         # Create curves
@@ -632,6 +734,14 @@ class AdaptiveGripperGUI(QMainWindow):
 
     def toggle_connection(self):
         if not self.is_connected:
+            # Reset all telemetry plotting checkboxes before connecting
+            self.grp_mag.setChecked(False)
+            self.grp_raw.setChecked(False)
+            self.grp_cur.setChecked(False)
+            self.grp_slip.setChecked(False)
+            self.grp_srv.setChecked(False)
+            self.chk_cmd_fft.setChecked(False)
+
             port = self.combo_ports.currentText()
             try:
                 baud = int(self.combo_baud.currentText())
@@ -660,6 +770,14 @@ class AdaptiveGripperGUI(QMainWindow):
             self.btn_connect.setText("Connect Serial")
             self.btn_connect.setStyleSheet("")
             self.radio_sim.setEnabled(True)
+            
+            # Toggle off all telemetry plotting
+            self.grp_mag.setChecked(False)
+            self.grp_raw.setChecked(False)
+            self.grp_cur.setChecked(False)
+            self.grp_slip.setChecked(False)
+            self.grp_srv.setChecked(False)
+            self.chk_cmd_fft.setChecked(False)
 
     def handle_error(self, msg):
         self.text_raw.append(f"!! ERROR: {msg}")
@@ -674,6 +792,14 @@ class AdaptiveGripperGUI(QMainWindow):
     def handle_data(self, data):
         # Process incoming JSON
         
+        # Add reception timestamp (ms)
+        # Use PC time if 't' (device time) is missing or 0
+        current_time_ms = time.time() * 1000.0
+        data['recv_ts'] = current_time_ms
+        
+        if 't' not in data or data['t'] == 0:
+            data['t'] = current_time_ms
+
         # 1. FFT Data
         if data.get('type') == 'fft':
             fft_vals = data.get('data', [])
@@ -714,6 +840,10 @@ class AdaptiveGripperGUI(QMainWindow):
         # Helper to safely append
         ts = data.get('t', 0)
         
+        # If recording, save entire data packet
+        if self.is_recording:
+            self.recording_data.append(data)
+        
         # All keys we track
         keys = ['mx', 'my', 'mz', 'mag', 
                 'rmx', 'rmy', 'rmz', 
@@ -730,6 +860,20 @@ class AdaptiveGripperGUI(QMainWindow):
         if len(self.data['timestamp']) > self.buffer_size:
             for k in self.data:
                 self.data[k] = self.data[k][-self.buffer_size:]
+
+    def toggle_recording(self):
+        if not self.is_recording:
+            # Start Recording
+            self.is_recording = True
+            self.recording_data = [] # Clear previous recording
+            self.btn_record.setText("Stop Recording")
+            self.btn_record.setStyleSheet(f"background-color: {COLOR_ACCENT_2}; color: white;")
+        else:
+            # Stop Recording
+            self.is_recording = False
+            self.btn_record.setText("Start Recording")
+            self.btn_record.setStyleSheet(f"background-color: {COLOR_PANEL}; color: {COLOR_ACCENT_3};")
+            print(f"Recording stopped. captured {len(self.recording_data)} samples.")
 
     def update_loop(self):
         # 1. Generate Sim Data if needed
@@ -800,25 +944,203 @@ class AdaptiveGripperGUI(QMainWindow):
                 with open(path, 'w', newline='') as f:
                     writer = csv.writer(f)
                     # Header
-                    keys = ['timestamp', 'mx', 'my', 'mz', 'mag', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']
+                    keys = ['timestamp', 'recv_ts', 'mx', 'my', 'mz', 'mag', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']
                     writer.writerow(keys + ['label'])
                     
-                    # Create a lookup for events
-                    # Events are stored with timestamp.
-                    # We will match if timestamp is within a small epsilon or exact match
-                    events_map = {e['timestamp']: e['label'] for e in self.recorded_events}
+                    # Decide source: Recording Data or Live Buffer
+                    source_data = []
                     
-                    for i in range(len(self.data['timestamp'])):
-                        t = self.data['timestamp'][i]
-                        row = [self.data[k][i] for k in keys]
+                    if self.recording_data:
+                        # Use the recording buffer
+                        for row_data in self.recording_data:
+                            row = []
+                            # Map keys
+                            t = row_data.get('t', 0)
+                            row.append(t)
+                            row.append(row_data.get('recv_ts', 0))
+                            for k in keys[2:]: # skip timestamps
+                                row.append(row_data.get(k, 0))
+                            
+                            # Check for label
+                            # Note: recorded_events are based on timestamp. 
+                            # If recording_data spans a long time, we need to match events.
+                            # Simple match:
+                            lbl = ""
+                            # Optimization: could iterate events, but this is simple export
+                            for ev in self.recorded_events:
+                                if abs(ev['timestamp'] - t) < 1.0: # 1ms tolerance
+                                    lbl = ev['label']
+                                    break
+                            row.append(lbl)
+                            source_data.append(row)
+                    else:
+                         # Use circular buffer
+                        # Create a lookup for events
+                        events_map = {e['timestamp']: e['label'] for e in self.recorded_events}
                         
-                        # Check for label (exact match for now, or match if close)
-                        lbl = events_map.get(t, "")
-                        writer.writerow(row + [lbl])
+                        for i in range(len(self.data['timestamp'])):
+                            t = self.data['timestamp'][i]
+                            # construct dict-like access for generic keys
+                            # timestamps
+                            # recv_ts is not stored in self.data (circular buffer) currently, so 0
+                            row = [t, 0] 
+                            for k in keys[2:]:
+                                row.append(self.data[k][i])
+                            
+                            lbl = events_map.get(t, "")
+                            row.append(lbl)
+                            source_data.append(row)
+                            
+                    writer.writerows(source_data)
                         
                 print(f"Exported to {path}")
             except Exception as e:
                 print(f"Export failed: {e}")
+
+    def load_replay_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Load Replay Data", "", "CSV Files (*.csv)")
+        if not path:
+            return
+            
+        try:
+            self.replay_data = []
+            first_row = True
+            with open(path, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Parse all floats
+                    item = {}
+                    for k, v in row.items():
+                        if k == 'label':
+                            item[k] = v
+                        else:
+                            try:
+                                item[k] = float(v)
+                            except:
+                                item[k] = 0.0
+                    
+                    # Robust Timestamp Handling for Replay
+                    # Priority: timestamp -> t -> recv_ts
+                    ts = 0
+                    if 'timestamp' in item and item['timestamp'] != 0:
+                        ts = item['timestamp']
+                    elif 't' in item and item['t'] != 0:
+                        ts = item['t']
+                    elif 'recv_ts' in item and item['recv_ts'] != 0:
+                        ts = item['recv_ts']
+                    
+                    item['t'] = ts # standardized key for plotting
+                    self.replay_data.append(item)
+                    
+                    # Configure view based on first row
+                    if first_row:
+                        self.configure_view_from_row(item)
+                        first_row = False
+            
+            if self.replay_data:
+                # Sort by time just in case
+                self.replay_data.sort(key=lambda x: x['t'])
+                
+                # Normalize time to start at 0 for better visualization
+                start_time = self.replay_data[0]['t']
+                for d in self.replay_data:
+                    d['t'] = d['t'] - start_time
+
+                self.slider_replay.setRange(0, len(self.replay_data) - 1)
+                self.slider_replay.setValue(0)
+                self.replay_index = 0
+                self.update_replay_plot_snapshot()
+                print(f"Loaded {len(self.replay_data)} samples for replay.")
+        except Exception as e:
+            print(f"Replay Load Failed: {e}")
+
+    def configure_view_from_row(self, row):
+        # Helper to enable checkboxes based on data presence (non-zero)
+        def check_group(grp_chk, sub_chks, keys):
+            has_data = False
+            for k in keys:
+                if abs(row.get(k, 0)) > 0.000001:
+                    has_data = True
+                    break
+            
+            if has_data:
+                grp_chk.setChecked(True)
+                for k in keys:
+                    # If the specific key has data, check it
+                    if k in sub_chks and abs(row.get(k, 0)) > 0.000001:
+                        sub_chks[k].setChecked(True)
+            else:
+                grp_chk.setChecked(False)
+        
+        # Mag Filtered
+        check_group(self.grp_mag, self.chk_mag, ['mx', 'my', 'mz', 'mag'])
+        # Mag Raw
+        check_group(self.grp_raw, self.chk_raw, ['rmx', 'rmy', 'rmz'])
+        # Current
+        check_group(self.grp_cur, self.chk_cur, ['cur'])
+        # Slip
+        check_group(self.grp_slip, self.chk_slip, ['slip', 's_ind'])
+        # Servo
+        check_group(self.grp_srv, self.chk_srv, ['srv', 'grp'])
+
+    def toggle_replay(self):
+        if self.replay_timer.isActive():
+            self.replay_timer.stop()
+            self.btn_play_replay.setText("Play")
+        else:
+            if not self.replay_data:
+                return
+            self.replay_timer.start(33) # 30ms playback
+            self.btn_play_replay.setText("Pause")
+
+    def on_replay_slider_move(self, val):
+        self.replay_index = val
+        self.update_replay_plot_snapshot()
+
+    def update_replay_loop(self):
+        if self.replay_index < len(self.replay_data) - 1:
+            self.replay_index += 1
+            self.slider_replay.setValue(self.replay_index)
+            self.update_replay_plot_snapshot()
+        else:
+            self.toggle_replay() # Stop at end
+
+    def update_replay_plot_snapshot(self):
+        if not self.replay_data:
+            return
+            
+        # Show a window of data
+        window = 500
+        start_idx = max(0, self.replay_index - window)
+        end_idx = self.replay_index + 1
+        
+        subset = self.replay_data[start_idx:end_idx]
+        
+        t = [d.get('t', 0) for d in subset]
+        
+        visible_values = []
+
+        # Helper to update if visible
+        for key, curve in self.replay_curves.items():
+            if curve.isVisible():
+                y = [d.get(key, 0) for d in subset]
+                curve.setData(t, y)
+                if self.chk_center_dc.isChecked():
+                    visible_values.extend(y)
+        
+        # Handle Center DC Scaling for Replay
+        if self.chk_center_dc.isChecked() and visible_values:
+            avg = np.mean(visible_values)
+            rng = self.spin_center_range.value()
+            self.plot_replay.setYRange(avg - rng, avg + rng, padding=0)
+        
+        # Update label
+        cur_t = self.replay_data[self.replay_index].get('t', 0)
+        self.lbl_replay_time.setText(f"{cur_t:.2f} ms")
+        
+        # Force auto-range on X for replay to follow the data
+        if t:
+            self.plot_replay.setXRange(min(t), max(t) + 0.1, padding=0)
 
     def import_data(self):
         path, _ = QFileDialog.getOpenFileName(self, "Import Data", "", "CSV Files (*.csv);;JSON Files (*.json)")

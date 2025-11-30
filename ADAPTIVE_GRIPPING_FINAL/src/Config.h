@@ -110,7 +110,7 @@ constexpr int TMC_RUN_CURRENT = 1000; // mA
 constexpr int TMC_MICROSTEPS = 16;     
 
 // Speed Settings
-constexpr int TMC_MAX_SPEED = 7000;      // Steps per second
+constexpr int TMC_MAX_SPEED = 6000;      // Steps per second
 constexpr int TMC_ACCELERATION = 5000;   // Steps per second^2
 
 // Automatic Homing Configuration

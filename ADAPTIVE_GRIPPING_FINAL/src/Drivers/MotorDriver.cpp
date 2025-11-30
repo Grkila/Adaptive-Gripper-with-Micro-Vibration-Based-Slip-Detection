@@ -187,14 +187,21 @@ void MotorDriver::runHomingRoutine() {
     
     delay(2000); // Skip acceleration spike
 
+    int consecutiveStalls = 0;
+
     while (millis() - startTime < TMC_HOMING_TIMEOUT_MS) {
         int32_t load = getLoad(); 
         if ((millis() % 200) == 0) Serial.printf("[MTR] Load: %d\n", load);
 
         if (load < TMC_HOMING_THRESHOLD) { 
-             Serial.printf("[MTR] Stall detected! Load: %d < %d\n", load, TMC_HOMING_THRESHOLD);
-             stalled = true;
-             break;
+             consecutiveStalls++;
+             if (consecutiveStalls >= TMC_HOMING_CONSECUTIVE_STALLS) {
+                 Serial.printf("[MTR] Stall detected! Load: %d < %d (Consecutive: %d)\n", load, TMC_HOMING_THRESHOLD, consecutiveStalls);
+                 stalled = true;
+                 break;
+             }
+        } else {
+             consecutiveStalls = 0;
         }
         
         if (!stepper->isRunning()) break;

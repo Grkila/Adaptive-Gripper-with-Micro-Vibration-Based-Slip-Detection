@@ -116,7 +116,8 @@ constexpr int TMC_ACCELERATION = 5000;   // Steps per second^2
 // Automatic Homing Configuration
 constexpr int TMC_HOMING_CURRENT = 500;    // mA
 constexpr int TMC_HOMING_SPEED = 5000;    // Steps per second
-constexpr int TMC_HOMING_THRESHOLD = 5;   // StallGuard threshold for homing
+constexpr int TMC_HOMING_THRESHOLD = 3;   // StallGuard threshold for homing
+constexpr int TMC_HOMING_CONSECUTIVE_STALLS = 3; // Number of consecutive stalls to confirm stall
 constexpr int TMC_HOMING_DIRECTION = -1;    // 1 for forward/up, -1 for backward/down
 constexpr int TMC_HOMING_TIMEOUT_MS = 1000000; // Safety timeout
 

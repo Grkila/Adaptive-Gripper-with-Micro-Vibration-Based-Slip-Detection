@@ -213,14 +213,15 @@ void MotorDriver::runHomingRoutine() {
     stepper->setCurrentPosition(0);
     
     if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
+        stepper->setSpeedInHz(TMC_MAX_SPEED);
+        stepper->setAcceleration(TMC_ACCELERATION);
         driver->rms_current(TMC_RUN_CURRENT);
         driver->SGTHRS(TMC_STALL_VALUE);
         xSemaphoreGiveRecursive(driverMutex);
     }
     
     Serial.println("[MTR] Homing routine complete.");
-    stepper->setSpeedInHz(TMC_MAX_SPEED);
-    stepper->setAcceleration(TMC_ACCELERATION);
+   
 }
 
 long MotorDriver::mmToSteps(float mm) {

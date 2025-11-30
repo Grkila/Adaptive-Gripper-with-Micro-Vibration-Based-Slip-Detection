@@ -64,7 +64,7 @@ constexpr uint16_t SLIP_FREQ_END_HZ = 300;
 // ============================================
 // GRIPPING STATE MACHINE TIMING
 // ============================================
-constexpr unsigned long REACTION_COOLDOWN_MS = 74;
+constexpr unsigned long REACTION_COOLDOWN_MS = 30;
 constexpr unsigned long BACKOFF_DELAY_MS = 2000;
 constexpr unsigned long BACKOFF_INTERVAL_MS = 1000;
 
@@ -114,9 +114,9 @@ constexpr int TMC_MAX_SPEED = 6000;      // Steps per second
 constexpr int TMC_ACCELERATION = 5000;   // Steps per second^2
 
 // Automatic Homing Configuration
-constexpr int TMC_HOMING_CURRENT = 200;    // mA
+constexpr int TMC_HOMING_CURRENT = 500;    // mA
 constexpr int TMC_HOMING_SPEED = 5000;    // Steps per second
-constexpr int TMC_HOMING_THRESHOLD = 50;   // StallGuard threshold for homing
+constexpr int TMC_HOMING_THRESHOLD = 5;   // StallGuard threshold for homing
 constexpr int TMC_HOMING_DIRECTION = -1;    // 1 for forward/up, -1 for backward/down
 constexpr int TMC_HOMING_TIMEOUT_MS = 1000000; // Safety timeout
 

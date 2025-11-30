@@ -17,7 +17,7 @@ import pyqtgraph as pg
 # ==========================================
 # Constants & Configuration
 # ==========================================
-DEFAULT_BAUD_RATE = 921600
+DEFAULT_BAUD_RATE = 2000000
 BAUD_RATES = [9600, 115200, 500000, 921600, 1000000, 2000000]
 
 # Grafana-style Colors

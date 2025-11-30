@@ -57,7 +57,7 @@ constexpr double FILTER_CURRENT_SAMPLE_RATE = 100.0;
 // ============================================
 // SLIP DETECTION CONFIGURATION
 // ============================================
-constexpr float SLIP_THRESHOLD = 60.0f;
+constexpr float SLIP_THRESHOLD = 80.0f;
 constexpr uint16_t SLIP_FREQ_START_HZ = 40;
 constexpr uint16_t SLIP_FREQ_END_HZ = 300;
 constexpr int SLIP_DETECTION_IGNORE_CYCLES = 100; // Ignore slip for 50 cycles (25ms) after movement to filter vibration
@@ -86,7 +86,7 @@ constexpr int MAX_REACTION_STEPS = 4;
 // ============================================
 // DEBUG TASK CONFIGURATION
 // ============================================
-constexpr unsigned long DEBUG_PRINT_INTERVAL_MS = 120;
+constexpr unsigned long DEBUG_PRINT_INTERVAL_MS = 1;
 constexpr uint32_t DEBUG_TASK_STACK_SIZE = 8192;
 constexpr UBaseType_t DEBUG_TASK_PRIORITY = 1;
 constexpr BaseType_t DEBUG_TASK_CORE = 0;

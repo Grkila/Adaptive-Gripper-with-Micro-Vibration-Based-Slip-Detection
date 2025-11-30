@@ -71,8 +71,10 @@ namespace GrippingFSM {
         break;
         
       case GRIPPING_MODE_REACTING:
-        // Tighten grip in response to slip
-        servo_position -= round(slip_indicator / SLIP_THRESHOLD);
+       { // Tighten grip in response to slip
+        int slip_u= round(slip_indicator / SLIP_THRESHOLD);
+        if (slip_u>MAX_REACTION_STEPS) slip_u=MAX_REACTION_STEPS;
+        servo_position -= slip_u;
         
         if (servo_position < SERVO_FULLY_CLOSED) {
           servo_position = SERVO_FULLY_CLOSED;
@@ -83,7 +85,7 @@ namespace GrippingFSM {
         last_slip_or_entry_time = millis();
         last_backoff_time = millis();
         break;
-        
+      }
       case GRIPPING_MODE_OPENING:
         // Move towards fully open position
         if (servo_position < SERVO_FULLY_OPEN) {

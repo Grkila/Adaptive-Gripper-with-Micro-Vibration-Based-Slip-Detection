@@ -80,7 +80,7 @@ constexpr float GRIP_MAGNITUDE_THRESHOLD = 5.0f;
 constexpr int GRASPING_STEP = 2;
 constexpr int OPENING_STEP = 5;
 constexpr int BACKOFF_STEP = 1;
-
+constexpr int MAX_REACTION_STEPS = 5;
 // ============================================
 // DEBUG TASK CONFIGURATION
 // ============================================

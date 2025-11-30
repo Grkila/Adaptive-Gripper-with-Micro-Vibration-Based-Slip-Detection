@@ -15,7 +15,7 @@
 //     │   ├── MagneticSensor.h/cpp
 //     │   ├── CurrentSensor.h/cpp
 //     │   ├── ServoDriver.h/cpp
-//     │   └── Buttons.h/cpp
+//     │   ├── Buttons.h/cpp
 //     └── Logic/            - Algorithms
 //         ├── Filters.h/cpp
 //         ├── FFTProcessor.h/cpp
@@ -41,6 +41,11 @@
 #include "src/Logic/SlipDetection.h"
 #include "src/Logic/GrippingFSM.h"
 #include "src/Logic/DebugTask.h"
+
+// GLOBAL VARIABLES TO ADD
+unsigned long cycleCounter = 0;
+const int CURRENT_READ_DIVIDER = 20;  // 2kHz / 20 = 100Hz
+const int BUTTON_READ_DIVIDER = 100;  // 2kHz / 100 = 20Hz
 
 // ============================================
 // TIMER ISR
@@ -121,91 +126,33 @@ void setup() {
 }
 
 // ============================================
-// MAIN LOOP - DETERMINISTIC SCAN CYCLE
+// NEW INPUT READING FUNCTION
 // ============================================
-void loop() {
-  // Execute scan cycle at fixed interval
-  readInputs();
-  processLogic();
-  writeOutputs();
+void readInputsSequentially() {
+  // --- HIGH PRIORITY (Every 0.5ms / 2kHz) ---
+  double raw_x, raw_y, raw_z;
+  MagneticSensor::read(raw_x, raw_y, raw_z);
+  MagneticSensor::applyCalibration(raw_x, raw_y, raw_z, calData);
   
-  // Update debug data (non-blocking - actual print runs on Core 0)
-  DebugTask::updateData();
+  magData.x = raw_x;
+  magData.y = raw_y;
+  magData.z = raw_z;
+  magData.magnitude = MagneticSensor::calculateMagnitude(raw_x, raw_y, raw_z);
   
-  // Yield to avoid starving other tasks/watchdog
-  yield();
-}
+  // Filters needed for FFT
+  Filters::applyMainFilterMagneticSensor(magData);
+  Filters::applyBandSplitFilterMagneticSensor(magData);
 
-// ============================================
-// SCAN CYCLE: READ INPUTS
-// ============================================
-void readInputs() {
-  // Check if timer triggered new sample
-  if (timerSemaphore != NULL && xSemaphoreTake(timerSemaphore, 0) == pdTRUE) {
-    currentSampleTime = micros();
-    
-    if (lastSampleTime > 0) {
-      measuredInterval = currentSampleTime - lastSampleTime;
-    }
-    
-    // Read magnetic sensor
-    double raw_x, raw_y, raw_z;
-    MagneticSensor::read(raw_x, raw_y, raw_z);
-    
-    // Apply calibration
-    MagneticSensor::applyCalibration(raw_x, raw_y, raw_z, calData);
-    
-    // Store in magnetic data structure
-    magData.x = raw_x;
-    magData.y = raw_y;
-    magData.z = raw_z;
-    magData.magnitude = MagneticSensor::calculateMagnitude(raw_x, raw_y, raw_z);
-    
-    // Apply 500 Hz low-pass filter
-    Filters::applyMainFilterMagneticSensor(magData);
-    
-    // Apply 30 Hz low-pass and calculate high-pass
-    Filters::applyBandSplitFilterMagneticSensor(magData);
-    
-    newDataAvailable = false;
-    
-    // Update scan timing for debug
-    unsigned long scan_duration = currentSampleTime - lastSampleTime;
-    bool time_exceeded = (scan_duration >= SCAN_INTERVAL_US + SCAN_INTERVAL_US / 4);
-    
-    // Guard against null mutex (created in DebugTask::init)
-    if (mutexSlipData != NULL && xSemaphoreTake(mutexSlipData, pdMS_TO_TICKS(0)) == pdTRUE) {
-      debugData.scan_time_us = scan_duration;
-      debugData.scan_time_exceeded = time_exceeded;
-      xSemaphoreGive(mutexSlipData);
-    }
-    
-    lastSampleTime = currentSampleTime;
-  }
-  // Run background tasks when not processing high-speed data
-  else {
-    readLowPriorityInputs();
-  }
-}
-
-// ============================================
-// HELPER: LOW PRIORITY INPUTS (POLLING)
-// ============================================
-void readLowPriorityInputs() {
-  unsigned long now = millis();
-  
-  // 1. Current Sensor (100Hz)
-  if (now - last_current_read > CURRENT_READ_INTERVAL_MS) {
-    last_current_read = now;
-    float raw_current = CurrentSensor::readCurrent_mA();
-    current_mA = Filters::filterCurrent(raw_current);
+  // --- LOW PRIORITY (Time-Sliced) ---
+  // Read Current (Every ~10ms)
+  if (cycleCounter % CURRENT_READ_DIVIDER == 0) {
+      float raw_current = CurrentSensor::readCurrent_mA();
+      current_mA = Filters::filterCurrent(raw_current);
   }
 
-  // 2. Buttons (20Hz)
-  static unsigned long last_button_read = 0;
-  if (now - last_button_read > BUTTON_READ_INTERVAL_MS) {
-    last_button_read = now;
-    buttons = Buttons::read();
+  // Read Buttons (Every ~50ms)
+  if (cycleCounter % BUTTON_READ_DIVIDER == 0) {
+      buttons = Buttons::read();
   }
 }
 
@@ -253,3 +200,24 @@ void writeOutputs() {
   ServoDriver::writePositionIfChanged(servo_position);
 }
 
+// ============================================
+// MAIN LOOP - DETERMINISTIC SCAN CYCLE
+// ============================================
+void loop() {
+  // 1. SYNC: Wait for Timer (Deterministic Start)
+  if (xSemaphoreTake(timerSemaphore, portMAX_DELAY) == pdTRUE) {
+    
+    // 2. READ INPUTS (With Priority Scheduling)
+    readInputsSequentially();
+
+    // 3. PROCESS LOGIC
+    processLogic();
+
+    // 4. WRITE OUTPUTS
+    writeOutputs();
+
+    // 5. MAINTENANCE
+    cycleCounter++;
+    DebugTask::updateData(); // Update debug data for the other core
+  }
+}

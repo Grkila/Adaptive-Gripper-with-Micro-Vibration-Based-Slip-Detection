@@ -9,7 +9,7 @@ import serial.tools.list_ports
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QComboBox, QCheckBox, QFileDialog, 
                              QGroupBox, QSplitter, QFrame, QScrollArea, QRadioButton, QButtonGroup,
-                             QTabWidget, QTextEdit, QSpinBox)
+                             QTabWidget, QTextEdit, QSpinBox, QDoubleSpinBox)
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QColor, QPalette, QFont
 import pyqtgraph as pg
@@ -323,6 +323,22 @@ class AdaptiveGripperGUI(QMainWindow):
         self.chk_auto_scale.toggled.connect(self.toggle_axis_scale)
         v_plot.addWidget(self.chk_auto_scale)
         
+        # Center DC Option
+        self.chk_center_dc = QCheckBox("Center at DC (Avg)")
+        self.chk_center_dc.toggled.connect(self.toggle_center_dc)
+        v_plot.addWidget(self.chk_center_dc)
+        
+        # Range setting for Center DC
+        h_center_range = QHBoxLayout()
+        h_center_range.addWidget(QLabel("Range (+/-):"))
+        self.spin_center_range = QDoubleSpinBox()
+        self.spin_center_range.setRange(0.1, 1000.0)
+        self.spin_center_range.setValue(20.0)
+        self.spin_center_range.setEnabled(False)
+        h_center_range.addWidget(self.spin_center_range)
+        v_plot.addLayout(h_center_range)
+        
+        # Manual Min/Max
         h_range = QHBoxLayout()
         self.spin_y_min = QSpinBox()
         self.spin_y_min.setRange(-1000, 1000)
@@ -513,16 +529,41 @@ class AdaptiveGripperGUI(QMainWindow):
 
     def toggle_axis_scale(self, checked):
         # Enable/Disable spinboxes
-        self.spin_y_min.setEnabled(not checked)
-        self.spin_y_max.setEnabled(not checked)
+        self.spin_y_min.setEnabled(False)
+        self.spin_y_max.setEnabled(False)
+        self.spin_center_range.setEnabled(False)
         
         if checked:
+            # Auto Scale ON
+            self.chk_center_dc.setChecked(False) # Mutually exclusive
             self.plot_time.enableAutoRange(axis='y')
         else:
-            self.update_axis_range()
+            # Auto Scale OFF - check if Center DC is ON, otherwise Manual
+            if not self.chk_center_dc.isChecked():
+                self.spin_y_min.setEnabled(True)
+                self.spin_y_max.setEnabled(True)
+                self.update_axis_range()
+
+    def toggle_center_dc(self, checked):
+        if checked:
+            # Center DC ON
+            self.chk_auto_scale.setChecked(False) # Mutually exclusive
+            self.spin_center_range.setEnabled(True)
+            self.spin_y_min.setEnabled(False)
+            self.spin_y_max.setEnabled(False)
+            # Disable auto range so we can set it manually in loop
+            self.plot_time.disableAutoRange(axis='y')
+        else:
+            # Center DC OFF
+            self.spin_center_range.setEnabled(False)
+            # If Auto Scale is also OFF, enable manual
+            if not self.chk_auto_scale.isChecked():
+                self.spin_y_min.setEnabled(True)
+                self.spin_y_max.setEnabled(True)
+                self.update_axis_range()
 
     def update_axis_range(self):
-        if not self.chk_auto_scale.isChecked():
+        if not self.chk_auto_scale.isChecked() and not self.chk_center_dc.isChecked():
             ymin = self.spin_y_min.value()
             ymax = self.spin_y_max.value()
             if ymin < ymax:
@@ -709,10 +750,22 @@ class AdaptiveGripperGUI(QMainWindow):
 
         # 2. Update Time Plot
         if len(self.data['timestamp']) > 1:
+            # Calculate DC average if needed
+            visible_values = []
+            
             # Update data for all curves (visibility handled by checkboxes)
             for key, curve in self.curves.items():
                 if key in self.data and curve.isVisible():
-                    curve.setData(self.data[key])
+                    y_data = self.data[key]
+                    curve.setData(y_data)
+                    if self.chk_center_dc.isChecked():
+                        visible_values.extend(y_data)
+            
+            # Handle Center DC Scaling
+            if self.chk_center_dc.isChecked() and visible_values:
+                avg = np.mean(visible_values)
+                rng = self.spin_center_range.value()
+                self.plot_time.setYRange(avg - rng, avg + rng, padding=0)
                     
         # 3. Update FFT Plot
         # If we have external FFT data, use it.

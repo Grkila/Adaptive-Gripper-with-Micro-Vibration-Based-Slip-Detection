@@ -3,7 +3,19 @@
 
 namespace SlipDetection {
   
+  static int ignore_counter = 0;
+
   void detect() {
+    // Handle ignore counter (vibration filtering)
+    if (ignore_counter > 0) {
+      ignore_counter--;
+      reset();
+      // Also reset FFT to ensure no old data accumulates during ignore period
+      fftY_high_pass.FFT_complete = false;
+      fftY_high_pass.index = 0;
+      return;
+    }
+
     // Check if FFT data is ready
     if (fftY_high_pass.FFT_complete) {
       
@@ -34,6 +46,9 @@ namespace SlipDetection {
         slip_flag = false;
       }
       
+      // Signal that new data is ready
+      new_slip_data_ready = true;
+
       // Update shared debug data
       if (mutexSlipData != NULL && xSemaphoreTake(mutexSlipData, pdMS_TO_TICKS(5)) == pdTRUE) {
         debugData.slip_flag = slip_flag;
@@ -57,6 +72,11 @@ namespace SlipDetection {
   void reset() {
     slip_flag = false;
     slip_indicator = 0.0f;
+    new_slip_data_ready = false;
+  }
+
+  void ignoreFor(int cycles) {
+    ignore_counter = cycles;
+    reset();
   }
 }
-

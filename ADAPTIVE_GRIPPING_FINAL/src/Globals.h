@@ -38,6 +38,7 @@ extern unsigned long last_backoff_time;
 // Slip detection
 extern bool slip_flag;
 extern float slip_indicator;
+extern bool new_slip_data_ready;
 
 // FFT instances
 extern AxisFFT fftX_high_pass;
@@ -66,4 +67,3 @@ extern TaskHandle_t debugTaskHandle;
 extern hw_timer_t* timer;
 
 #endif // GLOBALS_H
-

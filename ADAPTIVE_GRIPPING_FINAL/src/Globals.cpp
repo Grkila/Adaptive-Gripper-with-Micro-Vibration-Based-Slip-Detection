@@ -33,6 +33,7 @@ unsigned long last_backoff_time = 0;
 // Slip detection
 bool slip_flag = false;
 float slip_indicator = 0.0f;
+bool new_slip_data_ready = false;
 
 // FFT instances
 AxisFFT fftX_high_pass("X_high_pass");
@@ -59,4 +60,3 @@ TaskHandle_t debugTaskHandle = NULL;
 
 // Timer
 hw_timer_t* timer = NULL;
-

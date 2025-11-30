@@ -57,14 +57,15 @@ constexpr double FILTER_CURRENT_SAMPLE_RATE = 100.0;
 // ============================================
 // SLIP DETECTION CONFIGURATION
 // ============================================
-constexpr float SLIP_THRESHOLD = 250.0f;
+constexpr float SLIP_THRESHOLD = 150.0f;
 constexpr uint16_t SLIP_FREQ_START_HZ = 40;
 constexpr uint16_t SLIP_FREQ_END_HZ = 300;
+constexpr int SLIP_DETECTION_IGNORE_CYCLES = 100; // Ignore slip for 50 cycles (25ms) after movement to filter vibration
 
 // ============================================
 // GRIPPING STATE MACHINE TIMING
 // ============================================
-constexpr unsigned long REACTION_COOLDOWN_MS = 30;
+constexpr unsigned long REACTION_COOLDOWN_MS = 64;
 constexpr unsigned long BACKOFF_DELAY_MS = 2000;
 constexpr unsigned long BACKOFF_INTERVAL_MS = 1000;
 
@@ -72,15 +73,15 @@ constexpr unsigned long BACKOFF_INTERVAL_MS = 1000;
 // GRIPPING THRESHOLDS
 // ============================================
 constexpr float GRIP_CURRENT_THRESHOLD_MA = 8.0f;
-constexpr float GRIP_MAGNITUDE_THRESHOLD = 5.0f;
+constexpr float GRIP_MAGNITUDE_THRESHOLD = 6.0f;
 
 // ============================================
 // MOTOR SPEED SETTINGS
 // ============================================
-constexpr int GRASPING_STEP = 2;
+constexpr int GRASPING_STEP = 1;
 constexpr int OPENING_STEP = 5;
 constexpr int BACKOFF_STEP = 1;
-constexpr int MAX_REACTION_STEPS = 5;
+constexpr int MAX_REACTION_STEPS = 4;
 // ============================================
 // DEBUG TASK CONFIGURATION
 // ============================================
@@ -92,8 +93,7 @@ constexpr BaseType_t DEBUG_TASK_CORE = 0;
 // ============================================
 // I2C CONFIGURATION
 // ============================================
-constexpr uint32_t MAGNETIC_I2C_CLOCK_SPEED = 1000000;  // 400 kHz Fast Mode (reduced from 1MHz for stability)
-
+constexpr uint32_t MAGNETIC_I2C_CLOCK_SPEED = 1000000;  
 // ============================================
 // TMC2209 MOTOR CONFIGURATION
 // ============================================

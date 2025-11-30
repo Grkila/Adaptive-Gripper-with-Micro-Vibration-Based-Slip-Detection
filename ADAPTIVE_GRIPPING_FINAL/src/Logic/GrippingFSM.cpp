@@ -23,6 +23,10 @@ namespace GrippingFSM {
           if (servo_position < SERVO_FULLY_CLOSED) {
             servo_position = SERVO_FULLY_CLOSED;
           }
+
+          // IGNORE SLIP DETECTION DURING MOVEMENT
+          // Mechanical vibration from motor mimics slip frequencies
+          SlipDetection::ignoreFor(SLIP_DETECTION_IGNORE_CYCLES);
         }
         
         // Check if we've reached sufficient grip force
@@ -38,28 +42,22 @@ namespace GrippingFSM {
         break;
         
       case GRIPPING_MODE_HOLDING:
-        // React to slip detection
-        if (slip_flag) {
-          if (millis() - last_reaction_time > REACTION_COOLDOWN_MS) {
+      {
+        // React to slip detection - ONLY IF NEW DATA IS RECEIVED
+        if (new_slip_data_ready) {
+          if (slip_flag) {
+            // We are reacting, so we transition state
             last_reaction_time = millis();
             last_slip_or_entry_time = millis();
             last_backoff_time = millis();
-            slip_flag = false;
+            
             gripping_mode = GRIPPING_MODE_REACTING;
           }
+          // Clear the new data flag because we have processed this frame (either reacted or ignored)
+          new_slip_data_ready = false;
+          slip_flag = false; 
         }
-        // Gradual backoff after no slip for BACKOFF_DELAY
-        else if (millis() - last_slip_or_entry_time > BACKOFF_DELAY_MS) {
-          if (millis() - last_backoff_time > BACKOFF_INTERVAL_MS) {
-            last_backoff_time = millis();
-            // motor_position += BACKOFF_STEP;  // Commented out as in original
-            
-            if (servo_position > SERVO_FULLY_OPEN) {
-              servo_position = SERVO_FULLY_OPEN;
-            }
-          }
-        }
-        
+
         // Allow user to override and grasp tighter
         if (buttons.button_1) {
           gripping_mode = GRIPPING_MODE_GRASPING;
@@ -69,6 +67,7 @@ namespace GrippingFSM {
           gripping_mode = GRIPPING_MODE_OPENING;
         }
         break;
+      }
         
       case GRIPPING_MODE_REACTING:
        { // Tighten grip in response to slip
@@ -79,6 +78,9 @@ namespace GrippingFSM {
         if (servo_position < SERVO_FULLY_CLOSED) {
           servo_position = SERVO_FULLY_CLOSED;
         }
+
+        // IGNORE SLIP DETECTION DURING MOVEMENT
+        SlipDetection::reset();
         
         // Return to holding state after reaction
         gripping_mode = GRIPPING_MODE_HOLDING;
@@ -94,6 +96,9 @@ namespace GrippingFSM {
           if (servo_position > SERVO_FULLY_OPEN) {
             servo_position = SERVO_FULLY_OPEN;
           }
+
+          // IGNORE SLIP DETECTION DURING MOVEMENT
+          SlipDetection::ignoreFor(SLIP_DETECTION_IGNORE_CYCLES);
         }
         
         // Check if we've reached fully open
@@ -131,4 +136,3 @@ namespace GrippingFSM {
     }
   }
 }
-

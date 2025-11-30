@@ -22,6 +22,9 @@ namespace SlipDetection {
   
   // Reset slip detection state
   void reset();
+
+  // Ignore slip detection for a number of scan cycles
+  void ignoreFor(int cycles);
 }
 
 #endif // SLIP_DETECTION_H

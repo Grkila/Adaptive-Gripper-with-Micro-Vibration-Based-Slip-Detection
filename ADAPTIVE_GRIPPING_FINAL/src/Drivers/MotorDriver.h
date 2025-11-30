@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <TMCStepper.h>
+#include <FastAccelStepper.h>
 #include "../Config.h"
 
 class MotorDriver {
@@ -10,11 +11,13 @@ public:
     static void init();
     
     // Position Control API
-    static void moveTo(float absolutePosition);
-    static void moveRelative(float relativePosition);
-    static float getPosition();
-    static float getTargetPosition();
-    
+    static void moveTo(long absolutePosition); // Changed float to long for steps
+    static void moveRelative(long relativePosition); 
+    static long getPosition(); // Changed float to long
+    static long getTargetPosition(); // Changed float to long
+    static long mmToSteps(float mm);
+    static void moveToMM(float mm);
+    static void moveRelativeMM(float mm);
     // Manual/Speed Control (Overrides Position Control)
     static void setTargetSpeed(int32_t speed);
     
@@ -28,19 +31,15 @@ public:
     static void runHomingRoutine();
 
 private:
-    static void motorTask(void* parameter);
-    
-    // Internal state
-    static volatile float targetPosition;
-    static volatile float currentPosition;
-    static volatile int32_t targetSpeed; // For manual control or ramp
-    static volatile int32_t currentSpeed;
     static volatile bool enabled;
-    static volatile bool positionMode; // True if under position control
     static volatile bool initialized;  // True after successful init
     
     // TMC2209 driver pointer (initialized in init())
     static TMC2209Stepper* driver;
+    
+    // FastAccelStepper objects
+    static FastAccelStepperEngine engine;
+    static FastAccelStepper* stepper;
     
     // Mutex for driver access
     static SemaphoreHandle_t driverMutex;

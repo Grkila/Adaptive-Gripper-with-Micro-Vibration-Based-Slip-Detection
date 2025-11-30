@@ -228,13 +228,13 @@ void processLogic() {
   
   // Button 3: Up
   if (buttons.button_3 && !lastBtn3) {
-      MotorDriver::setTargetSpeed(-TMC_MAX_SPEED); 
+      MotorDriver::moveToMM(100);
   }
   lastBtn3 = buttons.button_3;
  
   // Button 4: Down
   if (buttons.button_4 && !lastBtn4) {
-      MotorDriver::setTargetSpeed(TMC_MAX_SPEED);
+      MotorDriver::moveToMM(1);
   }
   lastBtn4 = buttons.button_4;
   

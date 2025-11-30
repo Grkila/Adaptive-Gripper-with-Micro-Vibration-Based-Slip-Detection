@@ -9,7 +9,7 @@
 constexpr int SERVO_PIN = 12;
 constexpr int ANALOG_FEEDBACK_PIN = 13;
 constexpr int MAGNETIC_SENSOR_POWER_PIN = 14;
-constexpr int BUTTON_1_PIN = 16;
+constexpr int BUTTON_1_PIN = 25;
 constexpr int BUTTON_2_PIN = 23;
 constexpr int BUTTON_3_PIN = 22;
 constexpr int BUTTON_4_PIN = 21;
@@ -101,27 +101,28 @@ constexpr int TMC_RX_PIN = 5;    // TMC2209 PDN_UART
 constexpr int TMC_TX_PIN = 17;    // Connect to RX via 1k Resistor
 //constexpr int TMC_DIAG_PIN = 15;  // StallGuard output
 constexpr int TMC_EN_PIN = 18;    // Enable pin
-
+constexpr int TMC_STEP_PIN = 16;
+constexpr int TMC_DIR_PIN = 15;
 constexpr float TMC_R_SENSE = 0.11f;
 constexpr uint8_t TMC_DRIVER_ADDR = 0b00;
 constexpr int TMC_STALL_VALUE = 3; // Stall Sensitivity (0-255)
 
 constexpr int TMC_RUN_CURRENT = 600; // mA
-constexpr int TMC_MICROSTEPS = 1;     // 1/16 if not set, but user example says 1? user example: driver.microsteps(1); // 1/16 Microstepping. Wait, 1 means full step usually? No, in TMCStepper library logic depends. 0=microstepping disabled? No. 
-// Library: microsteps(uint16_t msteps). 0=256, 1=128?? No, standard is 0, 2, 4, 8, 16 etc.
-// The user example says: driver.microsteps(1); // 1/16 Microstepping. This comment might be wrong or using some specific override. I will copy the user example value.
+constexpr int TMC_MICROSTEPS = 1;     
 
 // Speed Settings
-constexpr int TMC_MAX_SPEED = 150000;      // VACTUAL units
-constexpr int TMC_ACCELERATION = 750;     // Speed increment per loop cycle
+constexpr int TMC_MAX_SPEED = 5000000;      // Steps per second (Max Hz) - Previously calculated as ~53625
+constexpr int TMC_ACCELERATION = 500000;   // Steps per second^2 - Previously calculated as ~53625
 constexpr int TMC_TASK_DELAY_MS = 10;      // Update loop frequency (approx 100Hz)
 constexpr BaseType_t TMC_TASK_CORE = 0;    // Run on Core 1
 
 // Automatic Homing Configuration
 constexpr int TMC_HOMING_CURRENT = 200;    // mA (Limit to 0.2A as requested)
-constexpr int TMC_HOMING_SPEED = 100000;     // Slow speed for homing (VACTUAL units)
+constexpr int TMC_HOMING_SPEED = 35000;    // Steps per second (Homing Hz) - Approx 50% of previous VACTUAL-equivalent
 constexpr int TMC_HOMING_THRESHOLD = 50;   // StallGuard threshold for homing (adjust as needed)
-constexpr int TMC_HOMING_DIRECTION = 1;    // 1 for forward/up, -1 for backward/down
+constexpr int TMC_HOMING_DIRECTION = -1;    // 1 for forward/up, -1 for backward/down
 constexpr int TMC_HOMING_TIMEOUT_MS = 1000000; // Safety timeout
+
+constexpr float TMC_STEPS_PER_MM = 42560.0f; // 1000000 steps per mm
 
 #endif // CONFIG_H

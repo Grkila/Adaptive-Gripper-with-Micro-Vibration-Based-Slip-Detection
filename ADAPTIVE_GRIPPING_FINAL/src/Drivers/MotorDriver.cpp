@@ -3,19 +3,15 @@
 #include <freertos/semphr.h>
 
 // Static member initialization
-volatile float MotorDriver::targetPosition = 0.0f;
-volatile float MotorDriver::currentPosition = 0.0f;
-volatile int32_t MotorDriver::targetSpeed = 0;
-volatile int32_t MotorDriver::currentSpeed = 0;
 volatile bool MotorDriver::enabled = false;
-volatile bool MotorDriver::positionMode = false;
 volatile bool MotorDriver::initialized = false;  // Track init state
 TMC2209Stepper* MotorDriver::driver = nullptr;
+FastAccelStepperEngine MotorDriver::engine = FastAccelStepperEngine();
+FastAccelStepper* MotorDriver::stepper = nullptr;
 SemaphoreHandle_t MotorDriver::driverMutex = NULL;
 
 // Constants
-constexpr float STEPS_PER_VACTUAL = 0.715f; // Approx conversion 1 VACTUAL unit ~ 0.715 steps/sec
-constexpr float POSITION_DEADZONE = 100.0f; // Deadzone in "VACTUAL-ticks" or steps
+constexpr float VACTUAL_TO_HZ = 0.715f; // Approx conversion 1 VACTUAL unit ~ 0.715 steps/sec
 
 void MotorDriver::init() {
     Serial.println("[MTR] init() starting...");
@@ -27,186 +23,121 @@ void MotorDriver::init() {
         Serial.println("[MTR-FATAL] Failed to create mutex!");
         return;
     }
-    Serial.println("[MTR] Mutex created OK");
 
     // 2. Initialize Serial
     Serial.println("[MTR] Initializing Serial2...");
     Serial2.begin(115200, SERIAL_8N1, TMC_RX_PIN, TMC_TX_PIN);
-    delay(100); // Give serial time to stabilize
-    Serial.println("[MTR] Serial2 initialized");
+    delay(100); 
 
-    // 3. Setup Pins
-    Serial.println("[MTR] Setting up EN pin...");
+    // 3. Setup Pins (EN pin handled by FastAccelStepper, but we init here too)
     pinMode(TMC_EN_PIN, OUTPUT);
     digitalWrite(TMC_EN_PIN, HIGH); // Disable initially
 
-    // 4. Create driver instance AFTER Serial2 is initialized
+    // 4. Create driver instance
     Serial.println("[MTR] Creating TMC2209Stepper object...");
-    Serial.print("[MTR] Free heap before new: ");
-    Serial.println(ESP.getFreeHeap());
-    
     driver = new TMC2209Stepper(&Serial2, TMC_R_SENSE, TMC_DRIVER_ADDR);
     if (driver == nullptr) {
         Serial.println("[MTR-FATAL] Failed to allocate driver!");
         return;
     }
-    Serial.println("[MTR] TMC2209Stepper object created");
     
-    // 5. Driver Setup
+    // 5. Driver Setup via UART
     Serial.println("[MTR] Configuring driver...");
     driver->begin();
-    Serial.println("[MTR] driver->begin() done");
     driver->toff(5);
     driver->microsteps(TMC_MICROSTEPS);
     driver->rms_current(TMC_RUN_CURRENT);
     driver->iholddelay(10);
-    // Silent Mode (StealthChop) enabled globally
-    driver->en_spreadCycle(false); 
+    driver->en_spreadCycle(false); // StealthChop
     driver->pwm_autoscale(true);
     driver->TCOOLTHRS(0xFFFFF);
     driver->SGTHRS(TMC_STALL_VALUE);
-    Serial.println("[MTR] Driver configuration complete");
+    
+    // IMPORTANT: Set VACTUAL to 0 to enable STEP/DIR control
+    driver->VACTUAL(0);
+    Serial.println("[MTR] Driver configuration complete (STEP/DIR mode)");
 
-    // Print free heap for debugging memory issues
-    Serial.print("[MTR] Free heap after TMC init: ");
-    Serial.println(ESP.getFreeHeap());
+    // 6. FastAccelStepper Setup
+    Serial.println("[MTR] Initializing FastAccelStepper...");
+    engine.init();
+    stepper = engine.stepperConnectToPin(TMC_STEP_PIN);
+    
+    if (stepper) {
+        stepper->setDirectionPin(TMC_DIR_PIN);
+        stepper->setEnablePin(TMC_EN_PIN);
+        stepper->setAutoEnable(true); // Automatically manage EN pin
+        
+        // Convert old acceleration units to steps/s^2 if needed, or use directly
+        // Assuming TMC_ACCELERATION in Config.h is suitable for FastAccelStepper directly
+        stepper->setAcceleration(TMC_ACCELERATION); 
+        Serial.println("[MTR] FastAccelStepper initialized");
+    } else {
+        Serial.println("[MTR-FATAL] Failed to create stepper!");
+    }
 
-    // Mark as initialized before creating task
     initialized = true;
-    Serial.println("[MTR] initialized = true");
-
-    // 6. Create Task LAST after everything is ready
-    Serial.println("[MTR] Creating motor task...");
-    xTaskCreatePinnedToCore(
-        motorTask,          // Function
-        "MotorTask",        // Name
-        4096,               // Stack size
-        NULL,               // Parameters
-        1,                  // Priority (Low priority)
-        NULL,               // Task handle
-        TMC_TASK_CORE       // Core
-    );
     Serial.println("[MTR] init() complete");
 }
 
-void MotorDriver::moveTo(float absolutePosition) {
-    if (!initialized) return;  // Guard against uninitialized state
-    if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-        targetPosition = absolutePosition;
-        positionMode = true;
-        
-        // Auto-enable if needed (direct, no nested mutex)
-        if (!enabled) {
-            digitalWrite(TMC_EN_PIN, LOW);
-            enabled = true;
-        }
-        xSemaphoreGiveRecursive(driverMutex);
-    }
+void MotorDriver::moveTo(long absolutePosition) {
+    if (stepper) stepper->moveTo(absolutePosition);
 }
 
-void MotorDriver::moveRelative(float relativePosition) {
-    if (!initialized) return;
-    if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-        targetPosition = currentPosition + relativePosition;
-        positionMode = true;
-        
-        // Auto-enable if needed (direct, no nested mutex)
-        if (!enabled) {
-            digitalWrite(TMC_EN_PIN, LOW);
-            enabled = true;
-        }
-        xSemaphoreGiveRecursive(driverMutex);
-    }
+void MotorDriver::moveRelative(long relativePosition) {
+    if (stepper) stepper->move(relativePosition);
 }
 
-float MotorDriver::getPosition() {
-    if (!initialized) return 0.0f;
-    float pos = 0.0f;
-    if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-        pos = currentPosition;
-        xSemaphoreGiveRecursive(driverMutex);
-    }
-    return pos;
+long MotorDriver::getPosition() {
+    if (stepper) return stepper->getCurrentPosition();
+    return 0;
 }
 
-float MotorDriver::getTargetPosition() {
-    if (!initialized) return 0.0f;
-    float pos = 0.0f;
-    if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-        pos = targetPosition;
-        xSemaphoreGiveRecursive(driverMutex);
-    }
-    return pos;
+long MotorDriver::getTargetPosition() {
+    if (stepper) return stepper->targetPos();
+    return 0;
 }
 
 void MotorDriver::setTargetSpeed(int32_t speed) {
-    // Serial.println("[MTR] setTargetSpeed enter");
-    if (!initialized) {
-        // Serial.println("[MTR] setTargetSpeed: not initialized!");
-        return;
-    }
-    // Serial.println("[MTR] setTargetSpeed: taking mutex...");
-    if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-        // Serial.println("[MTR] setTargetSpeed: mutex acquired");
-        positionMode = false;
-        targetSpeed = speed;
-        
-        if (speed != 0 && !enabled) {
-            // Serial.println("[MTR] setTargetSpeed: enabling motor");
-            digitalWrite(TMC_EN_PIN, LOW);
-            enabled = true;
-        } else if (speed == 0 && currentSpeed == 0) {
-            // Serial.println("[MTR] setTargetSpeed: disabling motor");
-            digitalWrite(TMC_EN_PIN, HIGH);
-            enabled = false;
-        }
-        // Serial.println("[MTR] setTargetSpeed: releasing mutex");
-        xSemaphoreGiveRecursive(driverMutex);
-        // Serial.println("[MTR] setTargetSpeed: done");
+    if (!stepper) return;
+    
+    // Critical section if needed, but FAS is thread-safeish for simple calls
+    // Speed control logic
+    if (speed == 0) {
+        stepper->stopMove(); // Ramps down to stop
+        enabled = false;
     } else {
-        Serial.println("[MTR] setTargetSpeed: mutex FAILED!");
+        // Use TMC_MAX_SPEED from Config.h as the cap
+        float speedHz = abs(speed) * VACTUAL_TO_HZ;
+        if (speedHz > TMC_MAX_SPEED) speedHz = TMC_MAX_SPEED;
+        if (speedHz < 100) speedHz = 100; // Minimum speed
+        
+        stepper->setSpeedInHz((uint32_t)speedHz);
+        
+        if (speed > 0) {
+            stepper->runForward();
+        } else {
+            stepper->runBackward();
+        }
+        enabled = true;
     }
 }
 
 void MotorDriver::stop() {
-    Serial.println("[MTR] stop() called");
-    if (!initialized) return;
-    if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-        positionMode = false;
-        targetSpeed = 0;
-        xSemaphoreGiveRecursive(driverMutex);
-    }
+    if (stepper) stepper->stopMove();
 }
 
 void MotorDriver::enable() {
-    Serial.println("[MTR] enable() called");
-    if (!initialized) return;
-    if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-        if (!enabled) {
-            digitalWrite(TMC_EN_PIN, LOW);
-            enabled = true;
-        }
-        xSemaphoreGiveRecursive(driverMutex);
-    }
+    if (stepper) stepper->enableOutputs();
 }
 
 void MotorDriver::disable() {
-    Serial.println("[MTR] disable() called");
-    if (!initialized) return;
-    if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-        if (enabled) {
-            digitalWrite(TMC_EN_PIN, HIGH);
-            enabled = false;
-        }
-        xSemaphoreGiveRecursive(driverMutex);
-    }
+    if (stepper) stepper->disableOutputs();
 }
 
 int32_t MotorDriver::getLoad() {
-    if (!initialized) return 0;
+    if (!initialized || !driver) return 0;
     
     int32_t result = 0;
-    // Protect access from external calls
     if (xSemaphoreTakeRecursive(driverMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
         result = driver->SG_RESULT();
         xSemaphoreGiveRecursive(driverMutex);
@@ -214,211 +145,90 @@ int32_t MotorDriver::getLoad() {
     return result;
 }
 
-void MotorDriver::motorTask(void* parameter) {
-    Serial.println("[MTR-TASK] Starting motor task...");
-    TickType_t xLastWakeTime;
-    const TickType_t xFrequency = pdMS_TO_TICKS(TMC_TASK_DELAY_MS);
-    
-    // Safety delay to ensure system stability and init completion
-    vTaskDelay(pdMS_TO_TICKS(500));
-    Serial.println("[MTR-TASK] Delay complete, entering loop");
-
-    xLastWakeTime = xTaskGetTickCount();
-    uint32_t loopCount = 0;
-
-    // Loop
-    while (true) {
-        // Guard against uninitialized state
-        if (!initialized) {
-            vTaskDelay(pdMS_TO_TICKS(100));
-            continue;
-        }
-        
-        // Take mutex for the ENTIRE logic update to ensure consistency
-        if (xSemaphoreTakeRecursive(driverMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-            int32_t desiredSpeed = 0;
-            
-            // --- 1. Position Control Logic ---
-            if (positionMode) {
-                float error = targetPosition - currentPosition;
-                
-                // Check if arrived
-                if (abs(error) < POSITION_DEADZONE) {
-                    desiredSpeed = 0;
-                    // If we are stopped and at target, disable (direct, no nested mutex)
-                    if (currentSpeed == 0 && enabled) {
-                        digitalWrite(TMC_EN_PIN, HIGH);
-                        enabled = false;
-                    }
-                } else {
-                    // Determine direction based on sign of error
-                    if (error > 0) {
-                        desiredSpeed = (int32_t)TMC_MAX_SPEED;
-                    } else {
-                        desiredSpeed = (int32_t)-TMC_MAX_SPEED;
-                    }
-                    
-                    // Ensure enabled (direct, no nested mutex)
-                    if (!enabled) {
-                        digitalWrite(TMC_EN_PIN, LOW);
-                        enabled = true;
-                    }
-                }
-                targetSpeed = desiredSpeed;
-            }
-            
-            // --- 2. Speed Ramp Logic (Shared) ---
-            // Smoothly adjust currentSpeed towards targetSpeed
-            if (currentSpeed < targetSpeed) {
-                currentSpeed += TMC_ACCELERATION;
-                if (currentSpeed > targetSpeed) currentSpeed = targetSpeed;
-            } else if (currentSpeed > targetSpeed) {
-                currentSpeed -= TMC_ACCELERATION;
-                if (currentSpeed < targetSpeed) currentSpeed = targetSpeed;
-            }
-            else if(currentSpeed==0)
-            {
-                currentSpeed = 0;
-                digitalWrite(TMC_EN_PIN, HIGH);
-                enabled = false;
-            }
-
-            // --- 3. Hardware Control ---
-            if (driver != nullptr) {
-                // Debug: print every 100 loops when motor is active
-                
-                if (enabled) {
-                    driver->VACTUAL(currentSpeed);
-                } else {
-                    driver->VACTUAL(0);
-                    currentSpeed = 0; // Force sync
-                }
-            }
-            
-            // --- 4. Position Estimation (Integration) ---
-            // Position += Speed * Time
-            if (enabled && currentSpeed != 0) {
-                 currentPosition += (float)currentSpeed * (TMC_TASK_DELAY_MS / 1000.0f);
-            }
-            
-            xSemaphoreGiveRecursive(driverMutex);
-        }
-
-        loopCount++;
-        // Delay for next cycle
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
-    }
-}
-
 void MotorDriver::runHomingRoutine() {
-    Serial.println("[MTR] Homing routine starting...");
-    if (!initialized) {
+    Serial.println("[MTR] Homing routine starting (STEP/DIR mode)...");
+    if (!initialized || !stepper) {
         Serial.println("[MTR] Not initialized, cannot home.");
         return;
     }
 
     // 1. Setup for homing
     if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-        Serial.println("[MTR] Configuring for homing (Low Current, StealthChop)...");
-        // Decrease current to safety limit
         driver->rms_current(TMC_HOMING_CURRENT); 
-        // Switch to StealthChop for sensitive StallGuard4
         driver->en_spreadCycle(false);
-        driver->pwm_autoscale(true);
         driver->SGTHRS(TMC_HOMING_THRESHOLD);
-        
-        // 1.5 Move AWAY first (safety clearing)
-        Serial.println("[MTR] Moving AWAY from home for 5 seconds...");
-        positionMode = false;
-        targetSpeed = TMC_HOMING_SPEED * -TMC_HOMING_DIRECTION; // Opposite direction
-        
-        // Enable motor
-        if (!enabled) {
-            digitalWrite(TMC_EN_PIN, LOW);
-            enabled = true;
-        }
-        
         xSemaphoreGiveRecursive(driverMutex);
-        
-        // Run away for 5 seconds
-        delay(5000);
-
-        // Pause for 1 second
-        Serial.println("[MTR] Pausing for 1 second...");
-        positionMode = false;
-        targetSpeed = 0; // Stop
-        if (enabled) {
-           driver->VACTUAL(0); // Force stop immediately at driver level
-        }
-        xSemaphoreGiveRecursive(driverMutex); // Release mutex during delay
-        delay(1000);
-        
-        // Switch to Homing Direction
-        if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-             Serial.println("[MTR] Moving TOWARDS home...");
-             targetSpeed = TMC_HOMING_SPEED * TMC_HOMING_DIRECTION; // Homing direction
-             
-             // Enable if disabled
-             if (!enabled) {
-                digitalWrite(TMC_EN_PIN, LOW);
-                enabled = true;
-             }
-             
-             xSemaphoreGiveRecursive(driverMutex);
-        }
-        
-    } else {
-        Serial.println("[MTR] Failed to take mutex for homing setup");
-        return;
     }
 
-    // 2. Wait for Stall
-    Serial.println("[MTR] Moving... waiting for stall.");
+    // 1.5 Move AWAY first
+    Serial.println("[MTR] Moving AWAY from home...");
+    
+    float homingSpeedHz = TMC_HOMING_SPEED * VACTUAL_TO_HZ;
+    stepper->setSpeedInHz((uint32_t)homingSpeedHz);
+    
+    if (TMC_HOMING_DIRECTION > 0) {
+        stepper->runBackward(); // Opposite to homing
+    } else {
+        stepper->runForward();
+    }
+    
+    delay(5000); // Run for 5 seconds
+    stepper->forceStop(); // Stop immediately
+    delay(1000);
+
+    // 2. Move TOWARDS home and check Stall
+    Serial.println("[MTR] Moving TOWARDS home...");
+    if (TMC_HOMING_DIRECTION > 0) {
+        stepper->runForward();
+    } else {
+        stepper->runBackward();
+    }
+
     unsigned long startTime = millis();
     bool stalled = false;
     
-    // Initial delay to skip acceleration current spike (Increased to 1s as requested for stabilization)
-    delay(2000); 
+    delay(2000); // Skip acceleration spike
 
     while (millis() - startTime < TMC_HOMING_TIMEOUT_MS) {
         int32_t load = getLoad(); 
-        // SG_RESULT is 0..510. Lower = higher load. 0 = Stall.
-        // Serial output might be too fast, throttle it
         if ((millis() % 200) == 0) Serial.printf("[MTR] Load: %d\n", load);
 
-        // Check if load drops below threshold (Stall detected)
-        // Higher threshold = Higher sensitivity (triggers earlier)
         if (load < TMC_HOMING_THRESHOLD) { 
              Serial.printf("[MTR] Stall detected! Load: %d < %d\n", load, TMC_HOMING_THRESHOLD);
              stalled = true;
              break;
         }
+        
+        // Also check if motor stopped for some other reason
+        if (!stepper->isRunning()) break;
+        
         delay(10);
     }
 
+    // 3. Stop
+    stepper->forceStop();
+    
     if (!stalled) {
-        Serial.println("[MTR] Homing timed out without stall (or hard stop reached safely due to low current).");
+        Serial.println("[MTR] Homing timed out without stall.");
     }
 
-    // 3. Stop and Reset
-    stop(); // Sets targetSpeed = 0
-    delay(500); // Wait for full stop
-
+    // 4. Reset Position and Config
+    stepper->setCurrentPosition(0);
+    
     if (xSemaphoreTakeRecursive(driverMutex, portMAX_DELAY) == pdTRUE) {
-        Serial.println("[MTR] Restoring normal configuration...");
-        // Reset Position to 0
-        currentPosition = 0.0f;
-        targetPosition = 0.0f;
-        
-        // Restore Current
         driver->rms_current(TMC_RUN_CURRENT);
-        // Ensure Silent Mode (StealthChop) remains enabled
-        driver->en_spreadCycle(false);
-        // Restore SGTHRS
         driver->SGTHRS(TMC_STALL_VALUE);
-        
         xSemaphoreGiveRecursive(driverMutex);
     }
     
     Serial.println("[MTR] Homing routine complete.");
 }
+long MotorDriver::mmToSteps(float mm) {
+    return (long)round(mm * TMC_STEPS_PER_MM);
+}
+void MotorDriver::moveToMM(float mm) {
+     moveTo(mmToSteps(mm));
+}
+void MotorDriver::moveRelativeMM(float mm) {
+    moveRelative(mmToSteps(mm));
+}   

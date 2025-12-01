@@ -133,8 +133,11 @@ class SerialWorker(QThread):
         except Exception as e:
             self.error_occurred.emit(str(e))
         finally:
-            if self.ser and self.ser.is_open:
-                self.ser.close()
+            try:
+                if self.ser and self.ser.is_open:
+                    self.ser.close()
+            except Exception:
+                pass
 
     def send_command(self, cmd):
         self.pending_commands.append(cmd)
@@ -192,7 +195,9 @@ class AdaptiveGripperGUI(QMainWindow):
         # Recording & Replay
         self.is_recording = False
         self.recording_data = [] # List of dicts for the current recording session
+        self.recording_fft = []  # List of dicts for FFT data
         self.replay_data = []    # List of dicts for replay
+        self.replay_fft_data = [] # List of dicts for replay FFT
         self.replay_index = 0
         self.replay_buffer = {
             'mx': [], 'my': [], 'mz': [], 'mag': [], 
@@ -398,14 +403,21 @@ class AdaptiveGripperGUI(QMainWindow):
         self.btn_success.clicked.connect(lambda: self.mark_event("Success"))
         self.btn_fail.clicked.connect(lambda: self.mark_event("Failure"))
         
-        self.btn_export = QPushButton("Export Data (CSV)")
+        self.btn_export = QPushButton("EXPORT DATA (CSV)")
+        self.btn_export.setMinimumHeight(40)
+        self.btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_export.setStyleSheet(f"""
+            background-color: {COLOR_ACCENT_4}; 
+            color: #000; 
+            font-weight: bold; 
+            font-size: 12pt;
+            border-radius: 5px;
+            border: 2px solid #d68100;
+        """)
         self.btn_export.clicked.connect(self.export_data)
-        self.btn_import = QPushButton("Import Data (JSON/CSV)")
-        self.btn_import.clicked.connect(self.import_data)
 
         v_act.addLayout(hbox_label)
         v_act.addWidget(self.btn_export)
-        v_act.addWidget(self.btn_import)
         
         grp_act.setLayout(v_act)
         sidebar_layout.addWidget(grp_act)
@@ -476,15 +488,27 @@ class AdaptiveGripperGUI(QMainWindow):
     def setup_replay_ui(self, parent):
         layout = QVBoxLayout(parent)
         
-        # Plot
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        
+        # Plot Time Series
         self.plot_replay = pg.PlotWidget(title="Replay Data")
         self.plot_replay.setBackground(COLOR_BG)
         self.plot_replay.showGrid(x=True, y=True, alpha=0.3)
         self.plot_replay.getAxis('bottom').setPen(COLOR_TEXT)
         self.plot_replay.getAxis('left').setPen(COLOR_TEXT)
-        layout.addWidget(self.plot_replay)
+        splitter.addWidget(self.plot_replay)
         
-        # Replay Curves
+        # Plot FFT
+        self.plot_replay_fft = pg.PlotWidget(title="Replay FFT")
+        self.plot_replay_fft.setBackground(COLOR_BG)
+        self.plot_replay_fft.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_replay_fft.setLabel('bottom', "Frequency", units='Hz')
+        self.plot_replay_fft.setLabel('left', "Magnitude")
+        splitter.addWidget(self.plot_replay_fft)
+        
+        layout.addWidget(splitter)
+        
+        # Replay Curves (Time Series)
         self.replay_curves = {}
         # Same colors as main
         c_mx = COLOR_ACCENT_2 
@@ -517,6 +541,9 @@ class AdaptiveGripperGUI(QMainWindow):
         # Servo
         self.replay_curves['srv'] = self.plot_replay.plot(pen=pg.mkPen(c_srv, width=2), name='Servo')
         self.replay_curves['grp'] = self.plot_replay.plot(pen=pg.mkPen(c_srv, width=1, style=Qt.PenStyle.DashLine), name='Grip')
+
+        # Replay Curve (FFT)
+        self.curve_replay_fft = self.plot_replay_fft.plot(pen=pg.mkPen(COLOR_ACCENT_1, width=2, fillLevel=0, brush=(0, 188, 212, 50)))
 
         # Initially hide all
         for c in self.replay_curves.values():
@@ -802,6 +829,10 @@ class AdaptiveGripperGUI(QMainWindow):
 
         # 1. FFT Data
         if data.get('type') == 'fft':
+            # Record FFT if recording
+            if self.is_recording:
+                self.recording_fft.append(data)
+                
             fft_vals = data.get('data', [])
             if fft_vals:
                 self.process_external_fft(fft_vals)
@@ -866,6 +897,7 @@ class AdaptiveGripperGUI(QMainWindow):
             # Start Recording
             self.is_recording = True
             self.recording_data = [] # Clear previous recording
+            self.recording_fft = []  # Clear previous FFT recording
             self.btn_record.setText("Stop Recording")
             self.btn_record.setStyleSheet(f"background-color: {COLOR_ACCENT_2}; color: white;")
         else:
@@ -873,7 +905,7 @@ class AdaptiveGripperGUI(QMainWindow):
             self.is_recording = False
             self.btn_record.setText("Start Recording")
             self.btn_record.setStyleSheet(f"background-color: {COLOR_PANEL}; color: {COLOR_ACCENT_3};")
-            print(f"Recording stopped. captured {len(self.recording_data)} samples.")
+            print(f"Recording stopped. captured {len(self.recording_data)} samples and {len(self.recording_fft)} FFT frames.")
 
     def update_loop(self):
         # 1. Generate Sim Data if needed
@@ -938,64 +970,96 @@ class AdaptiveGripperGUI(QMainWindow):
         # Optional: Add a visual marker on the plot (not implemented here for brevity)
 
     def export_data(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Export CSV", "", "CSV Files (*.csv)")
-        if path:
-            try:
-                with open(path, 'w', newline='') as f:
+        # Ask for directory to create the recording folder in
+        parent_dir = QFileDialog.getExistingDirectory(self, "Select Directory to Save Recording")
+        if not parent_dir:
+            return
+
+        try:
+            import os
+            from datetime import datetime
+            
+            # Create folder: recording_YYYY_MM_DD_HH_MM_SS
+            timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+            folder_name = f"recording_{timestamp}"
+            save_dir = os.path.join(parent_dir, folder_name)
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # 1. Export Main Time Series Data -> signals.csv
+            signals_path = os.path.join(save_dir, "signals.csv")
+            
+            with open(signals_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                # Header
+                keys = ['timestamp', 'recv_ts', 'mx', 'my', 'mz', 'mag', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']
+                writer.writerow(keys + ['label'])
+                
+                # Decide source: Recording Data or Live Buffer
+                source_data = []
+                
+                if self.recording_data:
+                    # Use the recording buffer
+                    for row_data in self.recording_data:
+                        row = []
+                        # Map keys
+                        t = row_data.get('t', 0)
+                        row.append(t)
+                        row.append(row_data.get('recv_ts', 0))
+                        for k in keys[2:]: # skip timestamps
+                            row.append(row_data.get(k, 0))
+                        
+                        # Check for label
+                        lbl = ""
+                        for ev in self.recorded_events:
+                            if abs(ev['timestamp'] - t) < 1.0: # 1ms tolerance
+                                lbl = ev['label']
+                                break
+                        row.append(lbl)
+                        source_data.append(row)
+                else:
+                     # Use circular buffer
+                    events_map = {e['timestamp']: e['label'] for e in self.recorded_events}
+                    
+                    for i in range(len(self.data['timestamp'])):
+                        t = self.data['timestamp'][i]
+                        row = [t, 0] 
+                        for k in keys[2:]:
+                            row.append(self.data[k][i])
+                        
+                        lbl = events_map.get(t, "")
+                        row.append(lbl)
+                        source_data.append(row)
+                        
+                writer.writerows(source_data)
+            
+            print(f"Exported signals to {signals_path}")
+
+            # 2. Export FFT Data -> FFT.csv
+            if self.recording_fft:
+                fft_path = os.path.join(save_dir, "FFT.csv")
+                    
+                with open(fft_path, 'w', newline='') as f:
                     writer = csv.writer(f)
                     # Header
-                    keys = ['timestamp', 'recv_ts', 'mx', 'my', 'mz', 'mag', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']
-                    writer.writerow(keys + ['label'])
+                    num_bins = len(self.recording_fft[0].get('data', []))
+                    header = ['timestamp', 'recv_ts'] + [f'bin_{i}' for i in range(num_bins)]
+                    writer.writerow(header)
                     
-                    # Decide source: Recording Data or Live Buffer
-                    source_data = []
-                    
-                    if self.recording_data:
-                        # Use the recording buffer
-                        for row_data in self.recording_data:
-                            row = []
-                            # Map keys
-                            t = row_data.get('t', 0)
-                            row.append(t)
-                            row.append(row_data.get('recv_ts', 0))
-                            for k in keys[2:]: # skip timestamps
-                                row.append(row_data.get(k, 0))
-                            
-                            # Check for label
-                            # Note: recorded_events are based on timestamp. 
-                            # If recording_data spans a long time, we need to match events.
-                            # Simple match:
-                            lbl = ""
-                            # Optimization: could iterate events, but this is simple export
-                            for ev in self.recorded_events:
-                                if abs(ev['timestamp'] - t) < 1.0: # 1ms tolerance
-                                    lbl = ev['label']
-                                    break
-                            row.append(lbl)
-                            source_data.append(row)
-                    else:
-                         # Use circular buffer
-                        # Create a lookup for events
-                        events_map = {e['timestamp']: e['label'] for e in self.recorded_events}
+                    for frame in self.recording_fft:
+                        t = frame.get('t', 0)
+                        recv_ts = frame.get('recv_ts', 0)
+                        bins = frame.get('data', [])
+                        row = [t, recv_ts] + bins
+                        writer.writerow(row)
                         
-                        for i in range(len(self.data['timestamp'])):
-                            t = self.data['timestamp'][i]
-                            # construct dict-like access for generic keys
-                            # timestamps
-                            # recv_ts is not stored in self.data (circular buffer) currently, so 0
-                            row = [t, 0] 
-                            for k in keys[2:]:
-                                row.append(self.data[k][i])
-                            
-                            lbl = events_map.get(t, "")
-                            row.append(lbl)
-                            source_data.append(row)
-                            
-                    writer.writerows(source_data)
-                        
-                print(f"Exported to {path}")
-            except Exception as e:
-                print(f"Export failed: {e}")
+                print(f"Exported FFT data to {fft_path}")
+            
+            # Show confirmation
+            self.text_raw.append(f">> SAVED RECORDING: {folder_name}")
+
+        except Exception as e:
+            print(f"Export failed: {e}")
+            self.text_raw.append(f"!! EXPORT FAILED: {e}")
 
     def load_replay_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "Load Replay Data", "", "CSV Files (*.csv)")
@@ -1004,11 +1068,16 @@ class AdaptiveGripperGUI(QMainWindow):
             
         try:
             self.replay_data = []
-            first_row = True
+            self.replay_fft_data = []
+            
+            # Temporary buffers
+            temp_signals = []
+            temp_fft = []
+            
+            # 1. Load Main Data (Signals)
             with open(path, 'r') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    # Parse all floats
                     item = {}
                     for k, v in row.items():
                         if k == 'label':
@@ -1018,32 +1087,135 @@ class AdaptiveGripperGUI(QMainWindow):
                                 item[k] = float(v)
                             except:
                                 item[k] = 0.0
-                    
-                    # Robust Timestamp Handling for Replay
-                    # Priority: timestamp -> t -> recv_ts
-                    ts = 0
-                    if 'timestamp' in item and item['timestamp'] != 0:
-                        ts = item['timestamp']
-                    elif 't' in item and item['t'] != 0:
-                        ts = item['t']
-                    elif 'recv_ts' in item and item['recv_ts'] != 0:
-                        ts = item['recv_ts']
-                    
-                    item['t'] = ts # standardized key for plotting
-                    self.replay_data.append(item)
-                    
-                    # Configure view based on first row
-                    if first_row:
-                        self.configure_view_from_row(item)
-                        first_row = False
+                    temp_signals.append(item)
             
-            if self.replay_data:
-                # Sort by time just in case
-                self.replay_data.sort(key=lambda x: x['t'])
+            # 2. Check for and Load FFT Data
+            if path.lower().endswith('signals.csv'):
+                # If we loaded signals.csv, look for FFT.csv in same folder
+                import os
+                dir_name = os.path.dirname(path)
+                fft_path = os.path.join(dir_name, "FFT.csv")
+            elif path.lower().endswith('.csv'):
+                # Fallback for old style or generic
+                fft_path = path[:-4] + "_fft.csv"
+            else:
+                fft_path = path + "_fft.csv"
                 
-                # Normalize time to start at 0 for better visualization
+            import os
+            if os.path.exists(fft_path):
+                try:
+                    with open(fft_path, 'r') as f:
+                        reader = csv.DictReader(f)
+                        for row in reader:
+                            # Parse metadata
+                            fft_item = {}
+                            # Extract timestamp and recv_ts explicitly
+                            if 'timestamp' in row: fft_item['timestamp'] = float(row['timestamp'])
+                            if 'recv_ts' in row: fft_item['recv_ts'] = float(row['recv_ts'])
+                            
+                            # Bins
+                            bins = []
+                            bin_keys = [k for k in row.keys() if k.startswith('bin_')]
+                            bin_keys.sort(key=lambda x: int(x.split('_')[1]))
+                            for k in bin_keys:
+                                try:
+                                    bins.append(float(row[k]))
+                                except:
+                                    bins.append(0.0)
+                            fft_item['data'] = bins
+                            temp_fft.append(fft_item)
+                            
+                    print(f"Loaded {len(temp_fft)} FFT frames.")
+                except Exception as e:
+                    print(f"Failed to load FFT sidecar: {e}")
+
+            # 3. Time Synchronization Logic
+            # Determine which timestamp field to use ('timestamp' or 'recv_ts')
+            # If signals 'timestamp' and FFT 'timestamp' are disjoint, try 'recv_ts'.
+            
+            def get_time_range(data_list, key):
+                if not data_list: return 0, 0
+                valid = [d[key] for d in data_list if key in d and d[key] != 0]
+                if not valid: return 0, 0
+                return min(valid), max(valid)
+
+            use_recv_ts = False
+            
+            if temp_signals and temp_fft:
+                sig_min, sig_max = get_time_range(temp_signals, 'timestamp')
+                fft_min, fft_max = get_time_range(temp_fft, 'timestamp')
+                
+                # Check overlap
+                overlap = max(0, min(sig_max, fft_max) - max(sig_min, fft_min))
+                
+                # If overlap is small (e.g. < 100ms) compared to duration, or completely disjoint
+                # Check if the gap is huge (e.g. > 1 minute) which implies epoch mismatch
+                gap = 0
+                if overlap == 0:
+                    gap = abs(fft_min - sig_min)
+                
+                print(f"Time Sync Check: Sig[{sig_min:.0f}-{sig_max:.0f}] FFT[{fft_min:.0f}-{fft_max:.0f}] Gap={gap:.0f}")
+                
+                # If gap is large (> 10 seconds), try recv_ts
+                if gap > 10000: 
+                    print("Timestamps diverged significantly. Checking recv_ts...")
+                    sig_r_min, sig_r_max = get_time_range(temp_signals, 'recv_ts')
+                    fft_r_min, fft_r_max = get_time_range(temp_fft, 'recv_ts')
+                    
+                    overlap_r = max(0, min(sig_r_max, fft_r_max) - max(sig_r_min, fft_r_min))
+                    gap_r = 0
+                    if overlap_r == 0:
+                        gap_r = abs(fft_r_min - sig_r_min)
+                        
+                    print(f"Recv_ts Sync Check: Sig[{sig_r_min:.0f}-{sig_r_max:.0f}] FFT[{fft_r_min:.0f}-{fft_r_max:.0f}] Gap={gap_r:.0f}")
+                    
+                    if gap_r < 10000: # Reasonable sync in wall clock
+                        use_recv_ts = True
+                        print(">> Switching to recv_ts for synchronization.")
+
+            # 4. Assign 't' based on decision
+            time_key = 'recv_ts' if use_recv_ts else 'timestamp'
+            
+            # Process Signals
+            self.replay_data = []
+            for item in temp_signals:
+                # Fallback logic if primary key is missing
+                ts = item.get(time_key, 0)
+                if ts == 0: 
+                    ts = item.get('timestamp', 0)
+                if ts == 0:
+                    ts = item.get('t', 0)
+                
+                item['t'] = ts
+                self.replay_data.append(item)
+
+            # Process FFT
+            self.replay_fft_data = []
+            for item in temp_fft:
+                ts = item.get(time_key, 0)
+                if ts == 0:
+                    ts = item.get('timestamp', 0)
+                
+                item['t'] = ts
+                self.replay_fft_data.append(item)
+
+            # 5. Normalize and Finalize
+            if self.replay_data:
+                # Sort
+                self.replay_data.sort(key=lambda x: x['t'])
+                if self.replay_fft_data:
+                    self.replay_fft_data.sort(key=lambda x: x['t'])
+                
+                # Configure view from first row
+                self.configure_view_from_row(self.replay_data[0])
+                
+                # Normalize time
                 start_time = self.replay_data[0]['t']
+                
                 for d in self.replay_data:
+                    d['t'] = d['t'] - start_time
+                    
+                for d in self.replay_fft_data:
                     d['t'] = d['t'] - start_time
 
                 self.slider_replay.setRange(0, len(self.replay_data) - 1)
@@ -1051,8 +1223,11 @@ class AdaptiveGripperGUI(QMainWindow):
                 self.replay_index = 0
                 self.update_replay_plot_snapshot()
                 print(f"Loaded {len(self.replay_data)} samples for replay.")
+                
         except Exception as e:
             print(f"Replay Load Failed: {e}")
+            import traceback
+            traceback.print_exc()
 
     def configure_view_from_row(self, row):
         # Helper to enable checkboxes based on data presence (non-zero)
@@ -1134,8 +1309,42 @@ class AdaptiveGripperGUI(QMainWindow):
             rng = self.spin_center_range.value()
             self.plot_replay.setYRange(avg - rng, avg + rng, padding=0)
         
-        # Update label
+        # Update FFT if available
         cur_t = self.replay_data[self.replay_index].get('t', 0)
+        
+        if self.replay_fft_data:
+            # Find the most recent FFT frame <= cur_t
+            # Since data is sorted, we can search
+            # Simple linear search backward from last known index or just linear scan if small enough
+            # For robustness, let's find the frame with closest timestamp
+            
+            # Efficient search:
+            import bisect
+            # Create a list of timestamps
+            # (Optimization: store this list separately to avoid rebuilding)
+            # For now, simple iteration since replay loop is 33ms
+            
+            best_frame = None
+            for frame in self.replay_fft_data:
+                if frame['t'] > cur_t:
+                    break
+                best_frame = frame
+                
+            # Or better: keep track of an index? 
+            # If we scrub backwards, index approach needs reset.
+            # Let's do the simple loop, it's fast enough for <10k frames
+            
+            if best_frame:
+                fft_vals = best_frame['data']
+                # X axis
+                sample_rate = self.spin_fft_rate.value()
+                num_bins = len(fft_vals)
+                freqs = np.linspace(0, sample_rate / 2, num_bins)
+                self.curve_replay_fft.setData(freqs, fft_vals)
+            else:
+                self.curve_replay_fft.clear()
+        
+        # Update label
         self.lbl_replay_time.setText(f"{cur_t:.2f} ms")
         
         # Force auto-range on X for replay to follow the data

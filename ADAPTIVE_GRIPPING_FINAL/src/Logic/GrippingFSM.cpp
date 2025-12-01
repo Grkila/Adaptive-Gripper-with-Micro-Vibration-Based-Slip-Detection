@@ -24,9 +24,6 @@ namespace GrippingFSM {
             servo_position = SERVO_FULLY_CLOSED;
           }
 
-          // IGNORE SLIP DETECTION DURING MOVEMENT
-          // Mechanical vibration from motor mimics slip frequencies
-         // SlipDetection::ignoreFor(SLIP_DETECTION_IGNORE_CYCLES);
         }
         
         // Check if we've reached sufficient grip force
@@ -45,7 +42,7 @@ namespace GrippingFSM {
       {
         // React to slip detection - ONLY IF NEW DATA IS RECEIVED
         if (new_slip_data_ready) {
-          if (slip_flag) {
+          if (slip_flag) { 
             // We are reacting, so we transition state
             last_reaction_time = millis();
             last_slip_or_entry_time = millis();
@@ -77,7 +74,8 @@ namespace GrippingFSM {
       case GRIPPING_MODE_REACTING:
        { // Tighten grip in response to slip
         int slip_u= round(slip_indicator / SLIP_THRESHOLD);
-        if (slip_u>MAX_REACTION_STEPS) slip_u=MAX_REACTION_STEPS;
+        if (slip_u > GRIP_SLIP_MARGIN_FALSE_POSITIVE) slip_u=0
+        if (slip_u>MAX_REACTION_STEPS) slip_u=MAX_REACTION_STEPS;;
         servo_position -= slip_u;
         
         if (servo_position < SERVO_FULLY_CLOSED) {

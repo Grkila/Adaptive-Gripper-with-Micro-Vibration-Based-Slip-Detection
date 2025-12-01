@@ -9,7 +9,8 @@ import serial.tools.list_ports
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QComboBox, QCheckBox, QFileDialog, 
                              QGroupBox, QSplitter, QFrame, QScrollArea, QRadioButton, QButtonGroup,
-                             QTabWidget, QTextEdit, QSpinBox, QDoubleSpinBox, QSlider)
+                             QTabWidget, QTextEdit, QSpinBox, QDoubleSpinBox, QSlider,
+                             QDialog, QFormLayout, QDialogButtonBox, QColorDialog)
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QColor, QPalette, QFont
 import pyqtgraph as pg
@@ -201,6 +202,66 @@ class SignalGenerator:
 # ==========================================
 # Main Application
 # ==========================================
+class StyleEditorDialog(QDialog):
+    def __init__(self, current_style, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Plot Style")
+        self.result_style = current_style.copy()
+        
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        
+        # Color Picker
+        self.btn_color = QPushButton()
+        self.btn_color.setFixedSize(50, 25)
+        self.btn_color.setStyleSheet(f"background-color: {self.result_style['color']}; border: 1px solid #555;")
+        self.btn_color.clicked.connect(self.pick_color)
+        form.addRow("Color:", self.btn_color)
+        
+        # Width
+        self.spin_width = QSpinBox()
+        self.spin_width.setRange(1, 10)
+        self.spin_width.setValue(self.result_style.get('width', 1))
+        self.spin_width.valueChanged.connect(self.set_width)
+        form.addRow("Line Width:", self.spin_width)
+        
+        # Style
+        self.combo_style = QComboBox()
+        self.styles = {
+            "Solid": Qt.PenStyle.SolidLine,
+            "Dash": Qt.PenStyle.DashLine,
+            "Dot": Qt.PenStyle.DotLine,
+            "DashDot": Qt.PenStyle.DashDotLine,
+            "DashDotDot": Qt.PenStyle.DashDotDotLine
+        }
+        for name, val in self.styles.items():
+            self.combo_style.addItem(name, val)
+            if val == self.result_style.get('style'):
+                self.combo_style.setCurrentText(name)
+        
+        self.combo_style.currentIndexChanged.connect(self.set_line_style)
+        form.addRow("Line Type:", self.combo_style)
+        
+        layout.addLayout(form)
+        
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+    def pick_color(self):
+        c = QColorDialog.getColor(QColor(self.result_style['color']), self, "Select Color")
+        if c.isValid():
+            self.result_style['color'] = c.name()
+            self.btn_color.setStyleSheet(f"background-color: {c.name()}; border: 1px solid #555;")
+
+    def set_width(self, val):
+        self.result_style['width'] = val
+
+    def set_line_style(self):
+        self.result_style['style'] = self.combo_style.currentData()
+
 class AdaptiveGripperGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -239,6 +300,22 @@ class AdaptiveGripperGUI(QMainWindow):
         self.sim_generator = SignalGenerator()
         self.is_simulating = False
         self.is_connected = False
+        
+        # Curve Styles Configuration
+        self.curve_styles = {
+            'mx': {'color': COLOR_ACCENT_2, 'style': Qt.PenStyle.SolidLine, 'width': 2},
+            'my': {'color': COLOR_ACCENT_3, 'style': Qt.PenStyle.SolidLine, 'width': 2},
+            'mz': {'color': COLOR_ACCENT_1, 'style': Qt.PenStyle.SolidLine, 'width': 2},
+            'mag': {'color': "#ffffff", 'style': Qt.PenStyle.SolidLine, 'width': 2},
+            'rmx': {'color': "#777777", 'style': Qt.PenStyle.DashLine, 'width': 1},
+            'rmy': {'color': "#777777", 'style': Qt.PenStyle.DashLine, 'width': 1},
+            'rmz': {'color': "#777777", 'style': Qt.PenStyle.DashLine, 'width': 1},
+            'cur': {'color': COLOR_ACCENT_4, 'style': Qt.PenStyle.SolidLine, 'width': 2},
+            'slip': {'color': "#ff0000", 'style': Qt.PenStyle.SolidLine, 'width': 2},
+            's_ind': {'color': "#ff0000", 'style': Qt.PenStyle.DotLine, 'width': 1},
+            'srv': {'color': COLOR_ACCENT_5, 'style': Qt.PenStyle.SolidLine, 'width': 2},
+            'grp': {'color': COLOR_ACCENT_5, 'style': Qt.PenStyle.DashLine, 'width': 1},
+        }
         
         # Setup UI
         self.setup_ui()
@@ -351,6 +428,21 @@ class AdaptiveGripperGUI(QMainWindow):
         self.spin_fft_rate.setValue(2000) # Default to 2kHz based on scan cycle
         h_rate.addWidget(self.spin_fft_rate)
         v_fft_cfg.addLayout(h_rate)
+        
+        # FFT Y-Scale
+        h_fft_scale = QHBoxLayout()
+        self.chk_fft_auto = QCheckBox("Auto Y-Scale")
+        self.chk_fft_auto.setChecked(True)
+        self.chk_fft_auto.toggled.connect(self.toggle_fft_scale)
+        h_fft_scale.addWidget(self.chk_fft_auto)
+        
+        self.spin_fft_max = QSpinBox()
+        self.spin_fft_max.setRange(1, 100000)
+        self.spin_fft_max.setValue(100)
+        self.spin_fft_max.setEnabled(False)
+        self.spin_fft_max.setSuffix(" max")
+        self.spin_fft_max.valueChanged.connect(self.update_fft_range)
+        h_fft_scale.addWidget(self.spin_fft_max)
         
         grp_fft_cfg.setLayout(v_fft_cfg)
         sidebar_layout.addWidget(grp_fft_cfg)
@@ -548,37 +640,33 @@ class AdaptiveGripperGUI(QMainWindow):
         
         # Replay Curves (Time Series)
         self.replay_curves = {}
-        # Same colors as main
-        c_mx = COLOR_ACCENT_2 
-        c_my = COLOR_ACCENT_3 
-        c_mz = COLOR_ACCENT_1
-        c_mag = "#ffffff"
-        c_cur = COLOR_ACCENT_4
-        c_raw = "#777777"
-        c_slip = "#ff0000"
-        c_srv = COLOR_ACCENT_5
+        
+        def create_replay_curve(key, name):
+            s = self.curve_styles[key]
+            pen = pg.mkPen(s['color'], width=s['width'], style=s['style'])
+            return self.plot_replay.plot(pen=pen, name=name)
         
         # Mag Filtered
-        self.replay_curves['mx'] = self.plot_replay.plot(pen=pg.mkPen(c_mx, width=2), name='Mag X')
-        self.replay_curves['my'] = self.plot_replay.plot(pen=pg.mkPen(c_my, width=2), name='Mag Y')
-        self.replay_curves['mz'] = self.plot_replay.plot(pen=pg.mkPen(c_mz, width=2), name='Mag Z')
-        self.replay_curves['mag'] = self.plot_replay.plot(pen=pg.mkPen(c_mag, width=2), name='Magnitude')
+        self.replay_curves['mx'] = create_replay_curve('mx', 'Mag X')
+        self.replay_curves['my'] = create_replay_curve('my', 'Mag Y')
+        self.replay_curves['mz'] = create_replay_curve('mz', 'Mag Z')
+        self.replay_curves['mag'] = create_replay_curve('mag', 'Magnitude')
         
         # Mag Raw
-        self.replay_curves['rmx'] = self.plot_replay.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw X')
-        self.replay_curves['rmy'] = self.plot_replay.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw Y')
-        self.replay_curves['rmz'] = self.plot_replay.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw Z')
+        self.replay_curves['rmx'] = create_replay_curve('rmx', 'Raw X')
+        self.replay_curves['rmy'] = create_replay_curve('rmy', 'Raw Y')
+        self.replay_curves['rmz'] = create_replay_curve('rmz', 'Raw Z')
 
         # Current
-        self.replay_curves['cur'] = self.plot_replay.plot(pen=pg.mkPen(c_cur, width=2), name='Current')
+        self.replay_curves['cur'] = create_replay_curve('cur', 'Current')
         
         # Slip
-        self.replay_curves['slip'] = self.plot_replay.plot(pen=pg.mkPen(c_slip, width=2), name='Slip State')
-        self.replay_curves['s_ind'] = self.plot_replay.plot(pen=pg.mkPen(c_slip, width=1, style=Qt.PenStyle.DotLine), name='Slip Ind')
+        self.replay_curves['slip'] = create_replay_curve('slip', 'Slip State')
+        self.replay_curves['s_ind'] = create_replay_curve('s_ind', 'Slip Ind')
         
         # Servo
-        self.replay_curves['srv'] = self.plot_replay.plot(pen=pg.mkPen(c_srv, width=2), name='Servo')
-        self.replay_curves['grp'] = self.plot_replay.plot(pen=pg.mkPen(c_srv, width=1, style=Qt.PenStyle.DashLine), name='Grip')
+        self.replay_curves['srv'] = create_replay_curve('srv', 'Servo')
+        self.replay_curves['grp'] = create_replay_curve('grp', 'Grip')
 
         # Replay Curve (FFT)
         self.curve_replay_fft = self.plot_replay_fft.plot(pen=pg.mkPen(COLOR_ACCENT_1, width=2, fillLevel=0, brush=(0, 188, 212, 50)))
@@ -625,17 +713,32 @@ class AdaptiveGripperGUI(QMainWindow):
             
             sub_checks = {}
             for key, name in plot_keys.items():
+                row_layout = QHBoxLayout()
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                
                 chk = QCheckBox(name)
                 chk.setChecked(False) # Default off
-                chk.setVisible(False) # Initially hidden until parent enabled? Or just disabled
+                chk.setVisible(False) 
                 chk.toggled.connect(lambda c, k=key: self.toggle_plot_visibility(k, c))
-                sub_layout.addWidget(chk)
-                sub_checks[key] = chk
+                
+                btn_style = QPushButton("🎨")
+                btn_style.setToolTip("Edit Style")
+                btn_style.setFixedSize(30, 22)
+                btn_style.setVisible(False)
+                btn_style.clicked.connect(lambda _, k=key: self.open_style_picker(k))
+                
+                row_layout.addWidget(chk)
+                row_layout.addWidget(btn_style)
+                row_layout.addStretch()
+                
+                sub_layout.addLayout(row_layout)
+                sub_checks[key] = (chk, btn_style)
                 
             # Link visibility/enable
             def on_main_toggle(checked):
-                for chk in sub_checks.values():
+                for chk, btn in sub_checks.values():
                     chk.setVisible(checked)
+                    btn.setVisible(checked)
                     if not checked:
                         chk.setChecked(False)
             
@@ -643,7 +746,9 @@ class AdaptiveGripperGUI(QMainWindow):
             
             vbox.addWidget(chk_cmd)
             vbox.addLayout(sub_layout)
-            return chk_cmd, sub_checks
+            
+            # Return just checkboxes for compatibility
+            return chk_cmd, {k: v[0] for k, v in sub_checks.items()}
 
         # 1. Mag Filtered
         self.grp_mag, self.chk_mag = create_stream_group("Mag Filtered", "mag_filtered", {
@@ -739,43 +844,74 @@ class AdaptiveGripperGUI(QMainWindow):
     def setup_plotting(self):
         # Create curves
         self.curves = {}
-        # Colors
-        c_mx = COLOR_ACCENT_2 # Pink
-        c_my = COLOR_ACCENT_3 # Green
-        c_mz = COLOR_ACCENT_1 # Cyan
-        c_mag = "#ffffff"     # White
-        c_cur = COLOR_ACCENT_4 # Orange
-        c_raw = "#777777"     # Grey
-        c_slip = "#ff0000"    # Red
-        c_srv = COLOR_ACCENT_5 # Purple
         
+        def create_curve(key, name):
+            s = self.curve_styles[key]
+            pen = pg.mkPen(s['color'], width=s['width'], style=s['style'])
+            return self.plot_time.plot(pen=pen, name=name)
+
         # Mag Filtered
-        self.curves['mx'] = self.plot_time.plot(pen=pg.mkPen(c_mx, width=2), name='Mag X')
-        self.curves['my'] = self.plot_time.plot(pen=pg.mkPen(c_my, width=2), name='Mag Y')
-        self.curves['mz'] = self.plot_time.plot(pen=pg.mkPen(c_mz, width=2), name='Mag Z')
-        self.curves['mag'] = self.plot_time.plot(pen=pg.mkPen(c_mag, width=2), name='Magnitude')
+        self.curves['mx'] = create_curve('mx', 'Mag X')
+        self.curves['my'] = create_curve('my', 'Mag Y')
+        self.curves['mz'] = create_curve('mz', 'Mag Z')
+        self.curves['mag'] = create_curve('mag', 'Magnitude')
         
         # Mag Raw
-        self.curves['rmx'] = self.plot_time.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw X')
-        self.curves['rmy'] = self.plot_time.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw Y')
-        self.curves['rmz'] = self.plot_time.plot(pen=pg.mkPen(c_raw, width=1, style=Qt.PenStyle.DashLine), name='Raw Z')
+        self.curves['rmx'] = create_curve('rmx', 'Raw X')
+        self.curves['rmy'] = create_curve('rmy', 'Raw Y')
+        self.curves['rmz'] = create_curve('rmz', 'Raw Z')
 
         # Current
-        self.curves['cur'] = self.plot_time.plot(pen=pg.mkPen(c_cur, width=2), name='Current')
+        self.curves['cur'] = create_curve('cur', 'Current')
         
         # Slip
-        self.curves['slip'] = self.plot_time.plot(pen=pg.mkPen(c_slip, width=2), name='Slip State')
-        self.curves['s_ind'] = self.plot_time.plot(pen=pg.mkPen(c_slip, width=1, style=Qt.PenStyle.DotLine), name='Slip Ind')
+        self.curves['slip'] = create_curve('slip', 'Slip State')
+        self.curves['s_ind'] = create_curve('s_ind', 'Slip Ind')
         
         # Servo
-        self.curves['srv'] = self.plot_time.plot(pen=pg.mkPen(c_srv, width=2), name='Servo')
-        self.curves['grp'] = self.plot_time.plot(pen=pg.mkPen(c_srv, width=1, style=Qt.PenStyle.DashLine), name='Grip')
+        self.curves['srv'] = create_curve('srv', 'Servo')
+        self.curves['grp'] = create_curve('grp', 'Grip')
         
         # Initially hide all
         for c in self.curves.values():
             c.setVisible(False)
 
         self.curve_fft = self.plot_fft.plot(pen=pg.mkPen(COLOR_ACCENT_1, width=2, fillLevel=0, brush=(0, 188, 212, 50)))
+
+    def update_curve_style(self, key):
+        if key not in self.curve_styles:
+            return
+        
+        s = self.curve_styles[key]
+        pen = pg.mkPen(s['color'], width=s['width'], style=s['style'])
+        
+        if key in self.curves:
+            self.curves[key].setPen(pen)
+        if key in self.replay_curves:
+            self.replay_curves[key].setPen(pen)
+
+    def open_style_picker(self, key):
+        if key not in self.curve_styles:
+            return
+            
+        dlg = StyleEditorDialog(self.curve_styles[key], self)
+        if dlg.exec():
+            self.curve_styles[key] = dlg.result_style
+            self.update_curve_style(key)
+
+    def toggle_fft_scale(self, checked):
+        self.spin_fft_max.setEnabled(not checked)
+        if checked:
+            self.plot_fft.enableAutoRange(axis='y')
+            self.plot_replay_fft.enableAutoRange(axis='y')
+        else:
+            self.update_fft_range()
+
+    def update_fft_range(self):
+        if not self.chk_fft_auto.isChecked():
+            v = self.spin_fft_max.value()
+            self.plot_fft.setYRange(0, v)
+            self.plot_replay_fft.setYRange(0, v)
 
     def apply_styles(self):
         self.setStyleSheet(STYLESHEET)

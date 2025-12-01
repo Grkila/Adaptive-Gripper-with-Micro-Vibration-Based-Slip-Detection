@@ -188,6 +188,9 @@ class AdaptiveGripperGUI(QMainWindow):
             'srv': [], 'grp': [],
             'timestamp': []
         }
+        # Buffer for despiking (median filter)
+        self.spike_buffer = {k: [] for k in self.data.keys() if k != 'timestamp'}
+        
         self.fft_data = {'freqs': [], 'mags': []}
         self.recorded_events = [] # For start/end of segments (Labeling)
         self.current_segment_start = None
@@ -327,6 +330,13 @@ class AdaptiveGripperGUI(QMainWindow):
         # 5. Analysis
         grp_ana = QGroupBox("Analysis")
         v_ana = QVBoxLayout()
+        
+        # Despike Checkbox
+        self.chk_despike = QCheckBox("Despike (Median Filter)")
+        self.chk_despike.setChecked(True)
+        self.chk_despike.setToolTip("Removes single-sample outliers/spikes using a 3-point median filter.")
+        v_ana.addWidget(self.chk_despike)
+        
         self.lbl_freq = QLabel("Dominant Freq: 0.0 Hz")
         self.lbl_freq.setStyleSheet(f"color: {COLOR_ACCENT_1}; font-size: 11pt; font-weight: bold;")
         v_ana.addWidget(self.lbl_freq)
@@ -871,9 +881,13 @@ class AdaptiveGripperGUI(QMainWindow):
         # Helper to safely append
         ts = data.get('t', 0)
         
-        # If recording, save entire data packet
-        if self.is_recording:
-            self.recording_data.append(data)
+        # If recording, save entire data packet (RAW data, before filtering)
+        # We typically want to record the raw data so we can post-process differently if needed.
+        # But if the spikes are serial errors, maybe we want to record filtered?
+        # Usually recording raw is safer, but for "WYSIWYG" export, let's record raw and let replay filter it if enabled?
+        # Or filter before recording? 
+        # Given the request is about "serial communication problems", these are artifacts, not signal.
+        # Let's filter BEFORE storage so everything (Plots, Recording, Export) is clean.
         
         # All keys we track
         keys = ['mx', 'my', 'mz', 'mag', 
@@ -881,9 +895,34 @@ class AdaptiveGripperGUI(QMainWindow):
                 'cur', 'slip', 's_ind', 
                 'srv', 'grp']
                 
+        filtered_data = {}
+        
+        # Apply Despiking (3-point Median Filter)
         for key in keys:
-            val = data.get(key, 0.0) # Default to 0 if missing
-            self.data[key].append(val)
+            raw_val = data.get(key, 0.0)
+            
+            # Update spike buffer
+            if key in self.spike_buffer:
+                self.spike_buffer[key].append(raw_val)
+                if len(self.spike_buffer[key]) > 3:
+                    self.spike_buffer[key].pop(0)
+            
+            val_to_store = raw_val
+            
+            # Only apply filter to analog-ish signals, not discrete states like 'slip' if not needed
+            # But 'slip' is 0/1, median filter works fine on it too (will debounce it).
+            if self.chk_despike.isChecked() and key in self.spike_buffer:
+                buf = self.spike_buffer[key]
+                if len(buf) == 3:
+                    # Median of 3
+                    # Sort takes ~O(N log N), for N=3 it's tiny.
+                    val_to_store = sorted(buf)[1]
+            
+            filtered_data[key] = val_to_store
+
+        # Update the data dict for plotting
+        for key in keys:
+            self.data[key].append(filtered_data[key])
             
         self.data['timestamp'].append(ts)
         
@@ -891,6 +930,15 @@ class AdaptiveGripperGUI(QMainWindow):
         if len(self.data['timestamp']) > self.buffer_size:
             for k in self.data:
                 self.data[k] = self.data[k][-self.buffer_size:]
+
+        # Recording (Save the FILTERED data if despike is on, to avoid saving corruption)
+        # If the user wants raw, they can uncheck despike.
+        if self.is_recording:
+            # Create a copy of data to save, injecting filtered values
+            record_packet = data.copy()
+            for k, v in filtered_data.items():
+                record_packet[k] = v
+            self.recording_data.append(record_packet)
 
     def toggle_recording(self):
         if not self.is_recording:

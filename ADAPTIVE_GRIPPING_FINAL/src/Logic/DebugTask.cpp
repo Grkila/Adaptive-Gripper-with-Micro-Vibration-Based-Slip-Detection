@@ -67,6 +67,10 @@ namespace DebugTask {
       debugData.mag_x_filtered = magData.x_low_pass;
       debugData.mag_y_filtered = magData.y_low_pass;
       debugData.mag_z_filtered = magData.z_low_pass;
+
+      debugData.mag_x_high_pass = magData.x_high_pass;
+      debugData.mag_y_high_pass = magData.y_high_pass;
+      debugData.mag_z_high_pass = magData.z_high_pass;
       
       debugData.current_mA = current_mA;
       debugData.servo_position = servo_position;
@@ -117,8 +121,19 @@ namespace DebugTask {
           if (line.indexOf("\"mag_raw\":true") >= 0) { config.stream_mag_raw = true; commandFound = true; }
           if (line.indexOf("\"mag_raw\":false") >= 0) { config.stream_mag_raw = false; commandFound = true; }
 
-          if (line.indexOf("\"mag_filtered\":true") >= 0) { config.stream_mag_filtered = true; commandFound = true; }
-          if (line.indexOf("\"mag_filtered\":false") >= 0) { config.stream_mag_filtered = false; commandFound = true; }
+          // Low pass (Legacy: mag_filtered)
+          if (line.indexOf("\"mag_filtered\":true") >= 0 || line.indexOf("\"mag_lowpass\":true") >= 0) { 
+            config.stream_mag_filtered = true; 
+            commandFound = true; 
+          }
+          if (line.indexOf("\"mag_filtered\":false") >= 0 || line.indexOf("\"mag_lowpass\":false") >= 0) { 
+            config.stream_mag_filtered = false; 
+            commandFound = true; 
+          }
+
+          // High pass
+          if (line.indexOf("\"mag_highpass\":true") >= 0) { config.stream_mag_highpass = true; commandFound = true; }
+          if (line.indexOf("\"mag_highpass\":false") >= 0) { config.stream_mag_highpass = false; commandFound = true; }
           
           if (line.indexOf("\"current\":true") >= 0) { config.stream_current = true; commandFound = true; }
           if (line.indexOf("\"current\":false") >= 0) { config.stream_current = false; commandFound = true; }
@@ -223,8 +238,16 @@ namespace DebugTask {
 
         if (config.stream_mag_filtered) {
            if(!first) chkSerial.print(",");
-           chkSerial.printf("\"mx\":%.2f,\"my\":%.2f,\"mz\":%.2f,\"mag\":%.2f", 
+           // Changed from mx/my/mz to mlx/mly/mlz for clarity (Low Pass)
+           chkSerial.printf("\"mlx\":%.2f,\"mly\":%.2f,\"mlz\":%.2f,\"mag\":%.2f", 
               localData.mag_x_filtered, localData.mag_y_filtered, localData.mag_z_filtered, localData.mag_magnitude);
+           first = false;
+        }
+
+        if (config.stream_mag_highpass) {
+           if(!first) chkSerial.print(",");
+           chkSerial.printf("\"mhx\":%.2f,\"mhy\":%.2f,\"mhz\":%.2f", 
+              localData.mag_x_high_pass, localData.mag_y_high_pass, localData.mag_z_high_pass);
            first = false;
         }
 

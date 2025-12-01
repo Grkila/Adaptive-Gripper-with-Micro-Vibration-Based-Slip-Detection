@@ -12,7 +12,8 @@
 namespace DebugTask {
   struct DebugConfig {
     bool stream_mag_raw = false;
-    bool stream_mag_filtered = false; 
+    bool stream_mag_filtered = false; // Low pass (legacy name)
+    bool stream_mag_highpass = false; // High pass
     bool stream_current = false;
     bool stream_servo = false;
     bool stream_slip = false;

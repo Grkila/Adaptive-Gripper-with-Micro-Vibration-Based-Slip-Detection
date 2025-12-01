@@ -79,6 +79,10 @@ struct DebugData {
   double mag_x_filtered; // Low pass
   double mag_y_filtered;
   double mag_z_filtered;
+
+  double mag_x_high_pass; // High pass
+  double mag_y_high_pass;
+  double mag_z_high_pass;
   
   float current_mA;
   int servo_position;

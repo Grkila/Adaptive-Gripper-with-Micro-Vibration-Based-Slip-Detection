@@ -119,7 +119,7 @@ class SerialWorker(QThread):
                 while self.pending_commands:
                     cmd = self.pending_commands.pop(0)
                     self.ser.write((cmd + '\n').encode())
-                    time.sleep(0.05)
+                    time.sleep(0.01) # 10ms pause between commands
 
                 if self.ser.in_waiting:
                     line = self.ser.readline().decode('utf-8', errors='ignore').strip()
@@ -160,7 +160,8 @@ class SerialWorker(QThread):
                             except json.JSONDecodeError:
                                 pass
         except Exception as e:
-            self.error_occurred.emit(str(e))
+            if self.running:
+                self.error_occurred.emit(str(e))
         finally:
             try:
                 if self.ser and self.ser.is_open:
@@ -194,7 +195,9 @@ class SignalGenerator:
         cur = 5 + 2 * np.sin(2 * np.pi * 5.0 * self.t) + np.random.normal(0, 0.2)
         
         return {
-            "mx": mx, "my": my, "mz": mz, 
+            "mlx": mx, "mly": my, "mlz": mz, # Low pass
+            "mhx": mx * 0.1, "mhy": my * 0.1, "mhz": mz * 0.1, # Fake high pass
+            "rmx": mx + np.random.normal(0, 2), "rmy": my + np.random.normal(0, 2), "rmz": mz + np.random.normal(0, 2),
             "mag": mag, "cur": cur, "slip": 0,
             "t": self.t * 1000 # simulate ms timestamp
         }
@@ -271,7 +274,8 @@ class AdaptiveGripperGUI(QMainWindow):
         # Data Storage
         self.buffer_size = 1000
         self.data = {
-            'mx': [], 'my': [], 'mz': [], 'mag': [], 
+            'mlx': [], 'mly': [], 'mlz': [], 'mag': [], 
+            'mhx': [], 'mhy': [], 'mhz': [],
             'rmx': [], 'rmy': [], 'rmz': [],
             'cur': [], 'slip': [], 's_ind': [],
             'srv': [], 'grp': [],
@@ -292,7 +296,8 @@ class AdaptiveGripperGUI(QMainWindow):
         self.replay_fft_data = [] # List of dicts for replay FFT
         self.replay_index = 0
         self.replay_buffer = {
-            'mx': [], 'my': [], 'mz': [], 'mag': [], 
+            'mlx': [], 'mly': [], 'mlz': [], 'mag': [], 
+            'mhx': [], 'mhy': [], 'mhz': [],
             'cur': [], 'slip': [], 'srv': [], 'grp': [], 'timestamp': []
         }
         
@@ -303,10 +308,13 @@ class AdaptiveGripperGUI(QMainWindow):
         
         # Curve Styles Configuration
         self.curve_styles = {
-            'mx': {'color': COLOR_ACCENT_2, 'style': Qt.PenStyle.SolidLine, 'width': 2},
-            'my': {'color': COLOR_ACCENT_3, 'style': Qt.PenStyle.SolidLine, 'width': 2},
-            'mz': {'color': COLOR_ACCENT_1, 'style': Qt.PenStyle.SolidLine, 'width': 2},
+            'mlx': {'color': COLOR_ACCENT_2, 'style': Qt.PenStyle.SolidLine, 'width': 2},
+            'mly': {'color': COLOR_ACCENT_3, 'style': Qt.PenStyle.SolidLine, 'width': 2},
+            'mlz': {'color': COLOR_ACCENT_1, 'style': Qt.PenStyle.SolidLine, 'width': 2},
             'mag': {'color': "#ffffff", 'style': Qt.PenStyle.SolidLine, 'width': 2},
+            'mhx': {'color': COLOR_ACCENT_2, 'style': Qt.PenStyle.DotLine, 'width': 1},
+            'mhy': {'color': COLOR_ACCENT_3, 'style': Qt.PenStyle.DotLine, 'width': 1},
+            'mhz': {'color': COLOR_ACCENT_1, 'style': Qt.PenStyle.DotLine, 'width': 1},
             'rmx': {'color': "#777777", 'style': Qt.PenStyle.DashLine, 'width': 1},
             'rmy': {'color': "#777777", 'style': Qt.PenStyle.DashLine, 'width': 1},
             'rmz': {'color': "#777777", 'style': Qt.PenStyle.DashLine, 'width': 1},
@@ -646,11 +654,16 @@ class AdaptiveGripperGUI(QMainWindow):
             pen = pg.mkPen(s['color'], width=s['width'], style=s['style'])
             return self.plot_replay.plot(pen=pen, name=name)
         
-        # Mag Filtered
-        self.replay_curves['mx'] = create_replay_curve('mx', 'Mag X')
-        self.replay_curves['my'] = create_replay_curve('my', 'Mag Y')
-        self.replay_curves['mz'] = create_replay_curve('mz', 'Mag Z')
+        # Mag Filtered (Low Pass)
+        self.replay_curves['mlx'] = create_replay_curve('mlx', 'Mag X')
+        self.replay_curves['mly'] = create_replay_curve('mly', 'Mag Y')
+        self.replay_curves['mlz'] = create_replay_curve('mlz', 'Mag Z')
         self.replay_curves['mag'] = create_replay_curve('mag', 'Magnitude')
+        
+        # Mag High Pass
+        self.replay_curves['mhx'] = create_replay_curve('mhx', 'HP X')
+        self.replay_curves['mhy'] = create_replay_curve('mhy', 'HP Y')
+        self.replay_curves['mhz'] = create_replay_curve('mhz', 'HP Z')
         
         # Mag Raw
         self.replay_curves['rmx'] = create_replay_curve('rmx', 'Raw X')
@@ -750,12 +763,17 @@ class AdaptiveGripperGUI(QMainWindow):
             # Return just checkboxes for compatibility
             return chk_cmd, {k: v[0] for k, v in sub_checks.items()}
 
-        # 1. Mag Filtered
-        self.grp_mag, self.chk_mag = create_stream_group("Mag Filtered", "mag_filtered", {
-            'mx': "Mag X", 'my': "Mag Y", 'mz': "Mag Z", 'mag': "Magnitude"
+        # 1. Mag Filtered -> Mag Low Pass
+        self.grp_mag, self.chk_mag = create_stream_group("Mag Low Pass", "mag_lowpass", {
+            'mlx': "Mag X", 'mly': "Mag Y", 'mlz': "Mag Z", 'mag': "Magnitude"
         })
         
-        # 2. Mag Raw
+        # 2. Mag High Pass
+        self.grp_mag_hp, self.chk_mag_hp = create_stream_group("Mag High Pass", "mag_highpass", {
+            'mhx': "HP X", 'mhy': "HP Y", 'mhz': "HP Z"
+        })
+        
+        # 3. Mag Raw
         self.grp_raw, self.chk_raw = create_stream_group("Mag Raw", "mag_raw", {
             'rmx': "Raw X", 'rmy': "Raw Y", 'rmz': "Raw Z"
         })
@@ -850,11 +868,16 @@ class AdaptiveGripperGUI(QMainWindow):
             pen = pg.mkPen(s['color'], width=s['width'], style=s['style'])
             return self.plot_time.plot(pen=pen, name=name)
 
-        # Mag Filtered
-        self.curves['mx'] = create_curve('mx', 'Mag X')
-        self.curves['my'] = create_curve('my', 'Mag Y')
-        self.curves['mz'] = create_curve('mz', 'Mag Z')
+        # Mag Filtered (Low Pass)
+        self.curves['mlx'] = create_curve('mlx', 'Mag X')
+        self.curves['mly'] = create_curve('mly', 'Mag Y')
+        self.curves['mlz'] = create_curve('mlz', 'Mag Z')
         self.curves['mag'] = create_curve('mag', 'Magnitude')
+        
+        # Mag High Pass
+        self.curves['mhx'] = create_curve('mhx', 'HP X')
+        self.curves['mhy'] = create_curve('mhy', 'HP Y')
+        self.curves['mhz'] = create_curve('mhz', 'HP Z')
         
         # Mag Raw
         self.curves['rmx'] = create_curve('rmx', 'Raw X')
@@ -937,6 +960,7 @@ class AdaptiveGripperGUI(QMainWindow):
         if not self.is_connected:
             # Reset all telemetry plotting checkboxes before connecting
             self.grp_mag.setChecked(False)
+            self.grp_mag_hp.setChecked(False)
             self.grp_raw.setChecked(False)
             self.grp_cur.setChecked(False)
             self.grp_slip.setChecked(False)
@@ -958,6 +982,20 @@ class AdaptiveGripperGUI(QMainWindow):
             self.serial_thread.error_occurred.connect(self.handle_error)
             self.serial_thread.start()
             
+            # Reset streams on connect (Disable all)
+            reset_cmds = [
+                '{"fft": false}',
+                '{"mag_raw": false}',
+                '{"mag_filtered": false}',
+                '{"mag_highpass": false}',
+                '{"current": false}',
+                '{"slip": false}',
+                '{"servo": false}',
+                '{"system": false}'
+            ]
+            for cmd in reset_cmds:
+                self.serial_thread.send_command(cmd)
+            
             self.is_connected = True
             self.btn_connect.setText("Disconnect")
             self.btn_connect.setStyleSheet(f"background-color: {COLOR_ACCENT_2}; color: white;")
@@ -974,6 +1012,7 @@ class AdaptiveGripperGUI(QMainWindow):
             
             # Toggle off all telemetry plotting
             self.grp_mag.setChecked(False)
+            self.grp_mag_hp.setChecked(False)
             self.grp_raw.setChecked(False)
             self.grp_cur.setChecked(False)
             self.grp_slip.setChecked(False)
@@ -982,7 +1021,8 @@ class AdaptiveGripperGUI(QMainWindow):
 
     def handle_error(self, msg):
         self.text_raw.append(f"!! ERROR: {msg}")
-        self.toggle_connection() # Reset UI
+        if self.is_connected:
+            self.toggle_connection() # Reset UI
 
     def handle_raw(self, line):
         self.text_raw.append(line)
@@ -1054,7 +1094,8 @@ class AdaptiveGripperGUI(QMainWindow):
         # Let's filter BEFORE storage so everything (Plots, Recording, Export) is clean.
         
         # All keys we track
-        keys = ['mx', 'my', 'mz', 'mag', 
+        keys = ['mlx', 'mly', 'mlz', 'mag', 
+                'mhx', 'mhy', 'mhz',
                 'rmx', 'rmy', 'rmz', 
                 'cur', 'slip', 's_ind', 
                 'srv', 'grp']
@@ -1203,7 +1244,7 @@ class AdaptiveGripperGUI(QMainWindow):
             with open(signals_path, 'w', newline='') as f:
                 writer = csv.writer(f)
                 # Header
-                keys = ['timestamp', 'recv_ts', 'mx', 'my', 'mz', 'mag', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']
+                keys = ['timestamp', 'recv_ts', 'mlx', 'mly', 'mlz', 'mag', 'mhx', 'mhy', 'mhz', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']
                 writer.writerow(keys + ['label'])
                 
                 # Decide source: Recording Data or Live Buffer
@@ -1292,6 +1333,11 @@ class AdaptiveGripperGUI(QMainWindow):
                 for row in reader:
                     item = {}
                     for k, v in row.items():
+                        # Legacy mapping
+                        if k == 'mx': k = 'mlx'
+                        elif k == 'my': k = 'mly'
+                        elif k == 'mz': k = 'mlz'
+                        
                         if k == 'label':
                             item[k] = v
                         else:
@@ -1459,8 +1505,10 @@ class AdaptiveGripperGUI(QMainWindow):
             else:
                 grp_chk.setChecked(False)
         
-        # Mag Filtered
-        check_group(self.grp_mag, self.chk_mag, ['mx', 'my', 'mz', 'mag'])
+        # Mag Filtered (Low Pass)
+        check_group(self.grp_mag, self.chk_mag, ['mlx', 'mly', 'mlz', 'mag'])
+        # Mag High Pass
+        check_group(self.grp_mag_hp, self.chk_mag_hp, ['mhx', 'mhy', 'mhz'])
         # Mag Raw
         check_group(self.grp_raw, self.chk_raw, ['rmx', 'rmy', 'rmz'])
         # Current
@@ -1582,9 +1630,15 @@ class AdaptiveGripperGUI(QMainWindow):
                         try:
                             t = float(row.get('timestamp', 0))
                             lbl = row.get('label', '')
+                            
+                            # Handle legacy keys if present
+                            row_mapped = row.copy()
+                            if 'mx' in row: row_mapped['mlx'] = row['mx']
+                            if 'my' in row: row_mapped['mly'] = row['my']
+                            if 'mz' in row: row_mapped['mlz'] = row['mz']
 
-                            for k in ['mx', 'my', 'mz', 'mag', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']:
-                                self.data[k].append(float(row.get(k, 0)))
+                            for k in ['mlx', 'mly', 'mlz', 'mag', 'mhx', 'mhy', 'mhz', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']:
+                                self.data[k].append(float(row_mapped.get(k, 0)))
                             
                             self.data['timestamp'].append(t)
                             

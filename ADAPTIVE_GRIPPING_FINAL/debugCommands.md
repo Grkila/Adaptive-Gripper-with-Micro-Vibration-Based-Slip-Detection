@@ -13,7 +13,8 @@ Send these JSON strings to the Serial port to toggle specific data streams.
 *   `{"fft": false}` - Disables FFT mode and returns to normal telemetry.
 
 ### Telemetry Toggles
-*   `{"mag_filtered": true}` / `false` - Filtered Magnetic Data (`mx`, `my`, `mz`, `mag`)
+*   `{"mag_lowpass": true}` / `false` - Low-Pass Filtered Magnetic Data (`mlx`, `mly`, `mlz`, `mag`). Alias: `mag_filtered`
+*   `{"mag_highpass": true}` / `false` - High-Pass Filtered Magnetic Data (`mhx`, `mhy`, `mhz`)
 *   `{"mag_raw": true}` / `false` - Raw Magnetic Data (`rmx`, `rmy`, `rmz`)
 *   `{"current": true}` / `false` - Current Sensor (`cur`)
 *   `{"slip": true}` / `false` - Slip Detection (`slip`, `s_ind`)

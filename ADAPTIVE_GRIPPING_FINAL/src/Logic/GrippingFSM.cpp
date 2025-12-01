@@ -26,7 +26,7 @@ namespace GrippingFSM {
 
           // IGNORE SLIP DETECTION DURING MOVEMENT
           // Mechanical vibration from motor mimics slip frequencies
-          SlipDetection::ignoreFor(SLIP_DETECTION_IGNORE_CYCLES);
+         // SlipDetection::ignoreFor(SLIP_DETECTION_IGNORE_CYCLES);
         }
         
         // Check if we've reached sufficient grip force
@@ -103,7 +103,7 @@ namespace GrippingFSM {
           }
 
           // IGNORE SLIP DETECTION DURING MOVEMENT
-          SlipDetection::ignoreFor(SLIP_DETECTION_IGNORE_CYCLES);
+         // SlipDetection::ignoreFor(SLIP_DETECTION_IGNORE_CYCLES);
         }
         
         // Check if we've reached fully open

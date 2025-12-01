@@ -88,10 +88,23 @@ QCheckBox::indicator:checked {{
     background-color: {COLOR_ACCENT_3};
     border-color: {COLOR_ACCENT_3};
 }}
-QLabel {{
-    color: {COLOR_TEXT};
-}}
-"""
+    QLabel {{
+        color: {COLOR_TEXT};
+    }}
+    QMenu {{
+        background-color: {COLOR_PANEL};
+        border: 1px solid #333;
+    }}
+    QMenu::item {{
+        padding: 5px 20px;
+        color: {COLOR_TEXT};
+        background-color: transparent;
+    }}
+    QMenu::item:selected {{
+        background-color: {COLOR_ACCENT_1};
+        color: #000;
+    }}
+    """
 
 # ==========================================
 # Serial Worker
@@ -308,6 +321,18 @@ class PlotSettingsWidget(QGroupBox):
         self.plot = plot_widget
         self.layout = QVBoxLayout(self)
         
+        # X-Axis Window (Samples)
+        h_x = QHBoxLayout()
+        h_x.addWidget(QLabel("X-Window (Samples):"))
+        self.spin_window = QSpinBox()
+        self.spin_window.setRange(10, 50000)
+        self.spin_window.setValue(1000)
+        self.spin_window.setSingleStep(100)
+        # Style the spinbox to be more visible
+        self.spin_window.setStyleSheet(f"border: 1px solid {COLOR_ACCENT_1};")
+        h_x.addWidget(self.spin_window)
+        self.layout.addLayout(h_x)
+
         # Auto Scale
         self.chk_auto = QCheckBox("Auto Scale Y-Axis")
         self.chk_auto.setChecked(True)
@@ -393,7 +418,7 @@ class AdaptiveGripperGUI(QMainWindow):
         self.resize(1200, 800)
         
         # Data Storage
-        self.buffer_size = 1000
+        self.buffer_size = 50000  # Increased buffer size to support larger windows
         self.data = {
             'mlx': [], 'mly': [], 'mlz': [], 'mag': [], 
             'mhx': [], 'mhy': [], 'mhz': [],
@@ -1235,10 +1260,13 @@ class AdaptiveGripperGUI(QMainWindow):
             
         self.data['timestamp'].append(ts)
         
-        # Keep buffer size
-        if len(self.data['timestamp']) > self.buffer_size:
+        # Lazy Truncation: Only truncate if buffer exceeds limit by a chunk
+        # This prevents expensive O(N) list slicing on every single data point
+        if len(self.data['timestamp']) > self.buffer_size + 1000:
+            # Keep exactly buffer_size
+            cutoff = len(self.data['timestamp']) - self.buffer_size
             for k in self.data:
-                self.data[k] = self.data[k][-self.buffer_size:]
+                self.data[k] = self.data[k][cutoff:]
 
         # Recording (Save the FILTERED data if despike is on, to avoid saving corruption)
         # If the user wants raw, they can uncheck despike.
@@ -1286,9 +1314,12 @@ class AdaptiveGripperGUI(QMainWindow):
             
             def update_plot_curves(curves, settings):
                 visible_vals = []
+                window_size = settings.spin_window.value()
+                
                 for key, curve in curves.items():
                     if key in self.data and curve.isVisible():
-                        y_data = self.data[key]
+                        # Slice data to the window size
+                        y_data = self.data[key][-window_size:]
                         curve.setData(y_data)
                         if settings.chk_center.isChecked():
                             visible_vals.extend(y_data)
@@ -1650,7 +1681,7 @@ class AdaptiveGripperGUI(QMainWindow):
             return
             
         # Show a window of data
-        window = 500
+        window = self.settings_replay.spin_window.value()
         start_idx = max(0, self.replay_index - window)
         end_idx = self.replay_index + 1
         
@@ -1770,6 +1801,7 @@ class AdaptiveGripperGUI(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setStyle("Fusion") # Force Fusion style for better dark theme support
     
     # Set dark palette for standard Qt widgets
     palette = QPalette()

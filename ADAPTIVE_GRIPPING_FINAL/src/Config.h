@@ -57,7 +57,7 @@ constexpr double FILTER_CURRENT_SAMPLE_RATE = 100.0;
 // ============================================
 // SLIP DETECTION CONFIGURATION
 // ============================================
-constexpr float SLIP_THRESHOLD = 80.0f;
+constexpr float SLIP_THRESHOLD =50.0f;
 constexpr uint16_t SLIP_FREQ_START_HZ = 80;
 constexpr uint16_t SLIP_FREQ_END_HZ = 200;
 constexpr int SLIP_DETECTION_IGNORE_CYCLES = 100; // Ignore slip for 50 cycles (25ms) after movement to filter vibration

@@ -154,7 +154,10 @@ class SerialWorker(QThread):
                                     if len(parts) == 2:
                                         content, chk_hex = parts
                                         try:
+                                            # Strip whitespace from hex (e.g. \r)
+                                            chk_hex = chk_hex.strip()
                                             recv_chk = int(chk_hex, 16)
+                                            
                                             # Calculate XOR checksum
                                             calc_chk = 0
                                             for char in content:
@@ -163,11 +166,14 @@ class SerialWorker(QThread):
                                             if calc_chk == recv_chk:
                                                 payload_str = content
                                                 valid_payload = True
+                                            else:
+                                                # Checksum mismatch
+                                                pass
                                         except ValueError:
                                             pass
                                 else:
-                                    # Legacy/No checksum
-                                    valid_payload = True
+                                    # Strict Mode: Reject lines without checksums to prevent spikes from corruption
+                                    valid_payload = False
 
                                 if valid_payload and payload_str.startswith('{') and payload_str.endswith('}'):
                                     try:

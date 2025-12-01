@@ -97,8 +97,8 @@ QLabel {{
 # Serial Worker
 # ==========================================
 class SerialWorker(QThread):
-    data_received = pyqtSignal(dict)
-    raw_received = pyqtSignal(str)
+    data_received = pyqtSignal(list) # Changed to emit list of data
+    raw_received = pyqtSignal(list) # Changed to emit list of strings
     error_occurred = pyqtSignal(str)
 
     def __init__(self, port, baud):
@@ -112,8 +112,8 @@ class SerialWorker(QThread):
     def run(self):
         try:
             self.ser = serial.Serial(self.port, self.baud, timeout=1)
-            time.sleep(2) # Wait for reset
-
+            # time.sleep(2) # Wait for reset - NOT NEEDED for modern ESP32 USB usually, and causes delay
+            
             while self.running and self.ser.is_open:
                 # Send pending commands
                 while self.pending_commands:
@@ -122,9 +122,25 @@ class SerialWorker(QThread):
                     time.sleep(0.01) # 10ms pause between commands
 
                 if self.ser.in_waiting:
-                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
-                    if line:
-                        self.raw_received.emit(line)
+                    batch_data = []
+                    batch_raw = []
+                    
+                    # Process a chunk of lines to drain buffer efficiently
+                    # Limit to 100 iterations to allow command processing interleaving
+                    for _ in range(100):
+                        if not self.ser.in_waiting:
+                            break
+                            
+                        try:
+                            line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                        except Exception:
+                            continue
+
+                        if not line:
+                            continue
+                            
+                        # Optional: limit raw logging to avoid spam if needed, but we batch it now
+                        batch_raw.append(line)
                         
                         payload_str = line
                         valid_payload = False
@@ -156,9 +172,23 @@ class SerialWorker(QThread):
                         if valid_payload and payload_str.startswith('{') and payload_str.endswith('}'):
                             try:
                                 data = json.loads(payload_str)
-                                self.data_received.emit(data)
+                                batch_data.append(data)
                             except json.JSONDecodeError:
                                 pass
+                    
+                    # Emit batches
+                    if batch_data:
+                        self.data_received.emit(batch_data)
+                    
+                    # Only emit raw log if not empty (consider throttling this further if UI lags)
+                    if batch_raw:
+                        self.raw_received.emit(batch_raw)
+                        
+                else:
+                    # Sleep only if no data was waiting, to prevent CPU hogging
+                    # reduced to 1ms
+                    self.msleep(1)
+                    
         except Exception as e:
             if self.running:
                 self.error_occurred.emit(str(e))
@@ -977,8 +1007,8 @@ class AdaptiveGripperGUI(QMainWindow):
                 return
 
             self.serial_thread = SerialWorker(port, baud)
-            self.serial_thread.data_received.connect(self.handle_data)
-            self.serial_thread.raw_received.connect(self.handle_raw)
+            self.serial_thread.data_received.connect(self.handle_data_batch) # Connect to batch handler
+            self.serial_thread.raw_received.connect(self.handle_raw_batch) # Connect to batch handler
             self.serial_thread.error_occurred.connect(self.handle_error)
             self.serial_thread.start()
             
@@ -1024,13 +1054,20 @@ class AdaptiveGripperGUI(QMainWindow):
         if self.is_connected:
             self.toggle_connection() # Reset UI
 
-    def handle_raw(self, line):
-        self.text_raw.append(line)
-        # Scroll to bottom
+    def handle_raw_batch(self, lines):
+        # Only print the last 10 lines to avoid UI lag, or throttle
+        for line in lines[-10:]:
+            self.text_raw.append(line)
+        
+        # Scroll to bottom less frequently or just once per batch
         sb = self.text_raw.verticalScrollBar()
         sb.setValue(sb.maximum())
 
-    def handle_data(self, data):
+    def handle_data_batch(self, batch):
+        for data in batch:
+            self.process_data_point(data)
+
+    def process_data_point(self, data):
         # Process incoming JSON
         
         # Add reception timestamp (ms)
@@ -1689,4 +1726,3 @@ if __name__ == "__main__":
     window = AdaptiveGripperGUI()
     window.show()
     sys.exit(app.exec())
-

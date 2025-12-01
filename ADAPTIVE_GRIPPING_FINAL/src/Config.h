@@ -72,9 +72,9 @@ constexpr unsigned long BACKOFF_INTERVAL_MS = 1000;
 // ============================================
 // GRIPPING THRESHOLDS
 // ============================================
-constexpr float GRIP_CURRENT_THRESHOLD_MA = 8.0f;
-constexpr float GRIP_MAGNITUDE_THRESHOLD = 3.0f;
-constexpr float GRIP_MAGNITUDE_DROP_MARGIN = 0.5f;
+constexpr float GRIP_CURRENT_THRESHOLD_MA = 0.0f;
+constexpr float GRIP_MAGNITUDE_THRESHOLD = 1.2f;
+constexpr float GRIP_MAGNITUDE_DROP_MARGIN = 0.2f;
 
 // ============================================
 // MOTOR SPEED SETTINGS

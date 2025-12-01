@@ -6,24 +6,43 @@ namespace DebugTask {
   
   DebugConfig config;
 
-  // Custom Print class to calculate checksum on the fly
-  class ChecksumSerial : public Print {
+  // Custom Buffered Print class to calculate checksum on the fly and minimize Serial calls
+  class ChecksumBufferedSerial : public Print {
   public:
       uint8_t checksum = 0;
+      uint8_t buffer[1024]; // 1KB buffer
+      size_t index = 0;
       
       size_t write(uint8_t c) override {
-          checksum ^= c;
-          return Serial.write(c);
-      }
-      
-      size_t write(const uint8_t *buffer, size_t size) override {
-          for (size_t i = 0; i < size; i++) {
-              checksum ^= buffer[i];
+          if (index < sizeof(buffer)) {
+              checksum ^= c;
+              buffer[index++] = c;
+              return 1;
           }
-          return Serial.write(buffer, size);
+          return 0;
       }
       
-      void reset() { checksum = 0; }
+      size_t write(const uint8_t *buf, size_t size) override {
+          size_t written = 0;
+          for (size_t i = 0; i < size; i++) {
+              if (write(buf[i])) written++;
+              else break;
+          }
+          return written;
+      }
+      
+      void reset() { checksum = 0; index = 0; }
+      
+      void flush() {
+          if (index > 0) {
+              Serial.write(buffer, index);
+              // Print checksum: |XX
+              char chkStr[8];
+              int len = snprintf(chkStr, sizeof(chkStr), "|%02X\r\n", checksum);
+              Serial.write((uint8_t*)chkStr, len);
+              reset();
+          }
+      }
   };
 
   void init() {
@@ -97,14 +116,13 @@ namespace DebugTask {
           line.trim();
           if (line.length() == 0) continue;
 
-          // Remove all spaces/tabs for easier parsing (handle {"key": value} vs {"key":value})
+          // Remove all spaces/tabs for easier parsing
           line.replace(" ", "");
           line.replace("\t", "");
 
           bool commandFound = false;
 
           // Simple JSON command parsing
-          // Example: {"fft":true} or {"mag":false}
           
           // Toggle FFT (Exclusive mode)
           if (line.indexOf("\"fft\":true") >= 0) {
@@ -121,7 +139,6 @@ namespace DebugTask {
           if (line.indexOf("\"mag_raw\":true") >= 0) { config.stream_mag_raw = true; commandFound = true; }
           if (line.indexOf("\"mag_raw\":false") >= 0) { config.stream_mag_raw = false; commandFound = true; }
 
-          // Low pass (Legacy: mag_filtered)
           if (line.indexOf("\"mag_filtered\":true") >= 0 || line.indexOf("\"mag_lowpass\":true") >= 0) { 
             config.stream_mag_filtered = true; 
             commandFound = true; 
@@ -131,7 +148,6 @@ namespace DebugTask {
             commandFound = true; 
           }
 
-          // High pass
           if (line.indexOf("\"mag_highpass\":true") >= 0) { config.stream_mag_highpass = true; commandFound = true; }
           if (line.indexOf("\"mag_highpass\":false") >= 0) { config.stream_mag_highpass = false; commandFound = true; }
           
@@ -148,11 +164,9 @@ namespace DebugTask {
           if (line.indexOf("\"system\":false") >= 0) { config.stream_system = false; commandFound = true; }
 
           // Ack for other commands to verify reception
-          if (commandFound && !config.stream_fft) { // Don't spam in FFT mode
-             // Optional: echo back current config or just OK
+          if (commandFound && !config.stream_fft) { 
              // Serial.println("{\"status\":\"CMD_OK\"}");
           } else if (!commandFound) {
-             // Debug help: print what we received if it didn't match
              Serial.print("{\"log\":\"Unknown cmd: ");
              Serial.print(line);
              Serial.println("\"}");
@@ -167,11 +181,11 @@ namespace DebugTask {
   }
   
   void taskFunction(void* parameter) {
-    TickType_t xLastWakeTime = xTaskGetTickCount();
+    // TickType_t xLastWakeTime = xTaskGetTickCount(); // Not used for simple Delay
     const TickType_t xFrequency = pdMS_TO_TICKS(DEBUG_PRINT_INTERVAL_MS);
     
     DebugData localData;
-    ChecksumSerial chkSerial;
+    ChecksumBufferedSerial chkSerial;
     
     for (;;) {
       // Check for commands
@@ -192,7 +206,6 @@ namespace DebugTask {
            
            if (mutexFFTData != NULL && xSemaphoreTake(mutexFFTData, pdMS_TO_TICKS(50)) == pdTRUE) {
               
-              // Helper to print array as JSON: "fft_x":[v1,v2,...]
               chkSerial.reset();
               chkSerial.print("{\"type\":\"fft\",\"data\":[");
               for(int i=0; i<FFT_SAMPLES/2; i++) { // Only first half is useful usually
@@ -201,8 +214,7 @@ namespace DebugTask {
               }
               chkSerial.print("]}");
               
-              // Print checksum: |XX
-              Serial.printf("|%02X\r\n", chkSerial.checksum);
+              chkSerial.flush();
               
               // Reset flag in FFT processor
               fftX_high_pass.FFT_complete = false;
@@ -217,13 +229,11 @@ namespace DebugTask {
       } 
       else {
         // NORMAL DEBUG MODE
-        // Wait for next cycle
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        // Use vTaskDelay instead of vTaskDelayUntil to prevent buffer saturation if lagging
+        vTaskDelay(xFrequency);
         
         // Copy shared data
         if (mutexSlipData != NULL && xSemaphoreTake(mutexSlipData, pdMS_TO_TICKS(10)) == pdTRUE) {
-          // Use const_cast to cast away volatile for the copy, 
-          // which is safe because we hold the mutex.
           localData = const_cast<DebugData&>(debugData);
           xSemaphoreGive(mutexSlipData);
         } else {
@@ -231,14 +241,12 @@ namespace DebugTask {
         }
 
         // Build JSON String
-        // Using manual string building for speed and no dynamic allocation overhead
         chkSerial.reset();
         chkSerial.print("{");
         bool first = true;
 
         if (config.stream_mag_filtered) {
            if(!first) chkSerial.print(",");
-           // Changed from mx/my/mz to mlx/mly/mlz for clarity (Low Pass)
            chkSerial.printf("\"mlx\":%.2f,\"mly\":%.2f,\"mlz\":%.2f,\"mag\":%.2f", 
               localData.mag_x_filtered, localData.mag_y_filtered, localData.mag_z_filtered, localData.mag_magnitude);
            first = false;
@@ -283,8 +291,7 @@ namespace DebugTask {
         }
 
         chkSerial.print("}");
-        // Print checksum: |XX
-        Serial.printf("|%02X\r\n", chkSerial.checksum);
+        chkSerial.flush();
       }
     }
   }

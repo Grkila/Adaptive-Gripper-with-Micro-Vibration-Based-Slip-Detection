@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QPushButton, QLabel, QComboBox, QCheckBox, QFileDialog, 
                              QGroupBox, QSplitter, QFrame, QScrollArea, QRadioButton, QButtonGroup,
                              QTabWidget, QTextEdit, QSpinBox, QDoubleSpinBox, QSlider,
-                             QDialog, QFormLayout, QDialogButtonBox, QColorDialog)
+                             QDialog, QFormLayout, QDialogButtonBox, QColorDialog, QGridLayout)
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QColor, QPalette, QFont
 import pyqtgraph as pg
@@ -108,85 +108,84 @@ class SerialWorker(QThread):
         self.running = True
         self.ser = None
         self.pending_commands = []
+        self.read_buffer = ""
 
     def run(self):
         try:
-            self.ser = serial.Serial(self.port, self.baud, timeout=1)
-            # time.sleep(2) # Wait for reset - NOT NEEDED for modern ESP32 USB usually, and causes delay
+            # timeout=0 for non-blocking read
+            self.ser = serial.Serial(self.port, self.baud, timeout=0)
             
             while self.running and self.ser.is_open:
                 # Send pending commands
                 while self.pending_commands:
                     cmd = self.pending_commands.pop(0)
                     self.ser.write((cmd + '\n').encode())
-                    time.sleep(0.01) # 10ms pause between commands
 
+                # Check for data
                 if self.ser.in_waiting:
-                    batch_data = []
-                    batch_raw = []
-                    
-                    # Process a chunk of lines to drain buffer efficiently
-                    # Limit to 100 iterations to allow command processing interleaving
-                    for _ in range(100):
-                        if not self.ser.in_waiting:
-                            break
+                    try:
+                        # Read everything available at once
+                        raw_data = self.ser.read(self.ser.in_waiting)
+                        text_data = raw_data.decode('utf-8', errors='ignore')
+                        
+                        self.read_buffer += text_data
+                        
+                        if '\n' in self.read_buffer:
+                            lines = self.read_buffer.split('\n')
+                            # Keep the last part (potential partial line) in buffer
+                            self.read_buffer = lines.pop()
                             
-                        try:
-                            line = self.ser.readline().decode('utf-8', errors='ignore').strip()
-                        except Exception:
-                            continue
+                            batch_data = []
+                            # Only keep a subset of raw lines to emit to avoid UI flooding
+                            # We'll just take the last 20 for logging purposes
+                            raw_lines_to_emit = lines[-20:] if len(lines) > 20 else lines
+                            
+                            for line in lines:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                
+                                payload_str = line
+                                valid_payload = False
+                                
+                                # Checksum verification (Format: {json}|HEX)
+                                if '|' in line:
+                                    parts = line.rsplit('|', 1)
+                                    if len(parts) == 2:
+                                        content, chk_hex = parts
+                                        try:
+                                            recv_chk = int(chk_hex, 16)
+                                            # Calculate XOR checksum
+                                            calc_chk = 0
+                                            for char in content:
+                                                calc_chk ^= ord(char)
+                                            
+                                            if calc_chk == recv_chk:
+                                                payload_str = content
+                                                valid_payload = True
+                                        except ValueError:
+                                            pass
+                                else:
+                                    # Legacy/No checksum
+                                    valid_payload = True
 
-                        if not line:
-                            continue
-                            
-                        # Optional: limit raw logging to avoid spam if needed, but we batch it now
-                        batch_raw.append(line)
-                        
-                        payload_str = line
-                        valid_payload = False
-                        
-                        # Checksum verification (Format: {json}|HEX)
-                        if '|' in line:
-                            parts = line.rsplit('|', 1)
-                            if len(parts) == 2:
-                                content, chk_hex = parts
-                                try:
-                                    recv_chk = int(chk_hex, 16)
-                                    # Calculate XOR checksum of the content part
-                                    calc_chk = 0
-                                    for char in content:
-                                        calc_chk ^= ord(char)
-                                    
-                                    if calc_chk == recv_chk:
-                                        payload_str = content
-                                        valid_payload = True
-                                    else:
-                                        # Optional: Log checksum error
+                                if valid_payload and payload_str.startswith('{') and payload_str.endswith('}'):
+                                    try:
+                                        data = json.loads(payload_str)
+                                        batch_data.append(data)
+                                    except json.JSONDecodeError:
                                         pass
-                                except ValueError:
-                                    pass
-                        else:
-                            # No checksum (legacy or simple ACK), allow if looks like JSON
-                            valid_payload = True
-
-                        if valid_payload and payload_str.startswith('{') and payload_str.endswith('}'):
-                            try:
-                                data = json.loads(payload_str)
-                                batch_data.append(data)
-                            except json.JSONDecodeError:
-                                pass
-                    
-                    # Emit batches
-                    if batch_data:
-                        self.data_received.emit(batch_data)
-                    
-                    # Only emit raw log if not empty (consider throttling this further if UI lags)
-                    if batch_raw:
-                        self.raw_received.emit(batch_raw)
-                        
+                            
+                            if batch_data:
+                                self.data_received.emit(batch_data)
+                            
+                            if raw_lines_to_emit:
+                                self.raw_received.emit(raw_lines_to_emit)
+                                
+                    except Exception:
+                        pass
                 else:
-                    # Sleep only if no data was waiting, to prevent CPU hogging
-                    # reduced to 1ms
+                    # Sleep briefly to yield CPU if no data
                     self.msleep(1)
                     
         except Exception as e:
@@ -295,6 +294,90 @@ class StyleEditorDialog(QDialog):
     def set_line_style(self):
         self.result_style['style'] = self.combo_style.currentData()
 
+class PlotSettingsWidget(QGroupBox):
+    def __init__(self, title, plot_widget, parent=None):
+        super().__init__(title, parent)
+        self.plot = plot_widget
+        self.layout = QVBoxLayout(self)
+        
+        # Auto Scale
+        self.chk_auto = QCheckBox("Auto Scale Y-Axis")
+        self.chk_auto.setChecked(True)
+        self.chk_auto.toggled.connect(self.toggle_auto)
+        self.layout.addWidget(self.chk_auto)
+        
+        # Center DC
+        self.chk_center = QCheckBox("Center at DC")
+        self.chk_center.toggled.connect(self.toggle_center)
+        self.layout.addWidget(self.chk_center)
+        
+        # Range for DC
+        h_dc = QHBoxLayout()
+        h_dc.addWidget(QLabel("Range (+/-):"))
+        self.spin_dc_range = QDoubleSpinBox()
+        self.spin_dc_range.setRange(0.1, 10000)
+        self.spin_dc_range.setValue(20)
+        self.spin_dc_range.setEnabled(False)
+        h_dc.addWidget(self.spin_dc_range)
+        self.layout.addLayout(h_dc)
+        
+        # Manual Range
+        h_man = QHBoxLayout()
+        self.spin_min = QSpinBox()
+        self.spin_min.setRange(-10000, 10000)
+        self.spin_min.setValue(-10)
+        self.spin_min.setEnabled(False)
+        self.spin_min.valueChanged.connect(self.update_manual)
+        
+        self.spin_max = QSpinBox()
+        self.spin_max.setRange(-10000, 10000)
+        self.spin_max.setValue(10)
+        self.spin_max.setEnabled(False)
+        self.spin_max.valueChanged.connect(self.update_manual)
+        
+        h_man.addWidget(self.spin_min)
+        h_man.addWidget(self.spin_max)
+        self.layout.addLayout(h_man)
+        
+    def toggle_auto(self, checked):
+        if checked:
+            self.chk_center.setChecked(False)
+            self.plot.enableAutoRange(axis='y')
+            self.spin_min.setEnabled(False)
+            self.spin_max.setEnabled(False)
+        else:
+            if not self.chk_center.isChecked():
+                self.spin_min.setEnabled(True)
+                self.spin_max.setEnabled(True)
+                self.update_manual()
+                
+    def toggle_center(self, checked):
+        if checked:
+            self.chk_auto.setChecked(False)
+            self.spin_dc_range.setEnabled(True)
+            self.spin_min.setEnabled(False)
+            self.spin_max.setEnabled(False)
+            self.plot.disableAutoRange(axis='y')
+        else:
+            self.spin_dc_range.setEnabled(False)
+            if not self.chk_auto.isChecked():
+                self.spin_min.setEnabled(True)
+                self.spin_max.setEnabled(True)
+                self.update_manual()
+                
+    def update_manual(self):
+        if not self.chk_auto.isChecked() and not self.chk_center.isChecked():
+            mn = self.spin_min.value()
+            mx = self.spin_max.value()
+            if mn < mx:
+                self.plot.setYRange(mn, mx)
+
+    def apply_dc_center(self, values):
+        if self.chk_center.isChecked() and values:
+            avg = np.mean(values)
+            rng = self.spin_dc_range.value()
+            self.plot.setYRange(avg - rng, avg + rng, padding=0)
+
 class AdaptiveGripperGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -380,13 +463,13 @@ class AdaptiveGripperGUI(QMainWindow):
         # --- Sidebar ---
         scroll_sidebar = QScrollArea()
         scroll_sidebar.setWidgetResizable(True)
-        scroll_sidebar.setFixedWidth(300)
+        scroll_sidebar.setFixedWidth(360) # Slightly wider for new columns
         scroll_sidebar.setStyleSheet(f"background-color: {COLOR_PANEL}; border: none;")
         
         sidebar = QWidget()
         sidebar.setStyleSheet(f"background-color: {COLOR_PANEL};")
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(15, 15, 15, 15)
+        sidebar_layout.setContentsMargins(10, 15, 10, 15)
         sidebar_layout.setSpacing(15)
         
         scroll_sidebar.setWidget(sidebar)
@@ -444,12 +527,17 @@ class AdaptiveGripperGUI(QMainWindow):
         grp_source.setLayout(v_source)
         sidebar_layout.addWidget(grp_source)
 
-        # 3. Telemetry & Plots
+        # 3. Telemetry & Plots (Modified)
         self.setup_telemetry_ui(sidebar_layout)
 
-        # 4. FFT Configuration
-        grp_fft_cfg = QGroupBox("FFT Configuration")
+        # 4. View Configuration & FFT
+        grp_fft_cfg = QGroupBox("FFT & View Config")
         v_fft_cfg = QVBoxLayout()
+        
+        self.chk_show_fft = QCheckBox("Show FFT Plot")
+        self.chk_show_fft.setChecked(False) # Default hidden
+        self.chk_show_fft.toggled.connect(self.update_layout_visibility)
+        v_fft_cfg.addWidget(self.chk_show_fft)
         
         h_samp = QHBoxLayout()
         h_samp.addWidget(QLabel("Samples:"))
@@ -463,7 +551,7 @@ class AdaptiveGripperGUI(QMainWindow):
         h_rate.addWidget(QLabel("Rate (Hz):"))
         self.spin_fft_rate = QSpinBox()
         self.spin_fft_rate.setRange(1, 10000)
-        self.spin_fft_rate.setValue(2000) # Default to 2kHz based on scan cycle
+        self.spin_fft_rate.setValue(2000) 
         h_rate.addWidget(self.spin_fft_rate)
         v_fft_cfg.addLayout(h_rate)
         
@@ -482,6 +570,7 @@ class AdaptiveGripperGUI(QMainWindow):
         self.spin_fft_max.valueChanged.connect(self.update_fft_range)
         h_fft_scale.addWidget(self.spin_fft_max)
         
+        v_fft_cfg.addLayout(h_fft_scale)
         grp_fft_cfg.setLayout(v_fft_cfg)
         sidebar_layout.addWidget(grp_fft_cfg)
 
@@ -489,10 +578,8 @@ class AdaptiveGripperGUI(QMainWindow):
         grp_ana = QGroupBox("Analysis")
         v_ana = QVBoxLayout()
         
-        # Despike Checkbox
         self.chk_despike = QCheckBox("Despike (Median Filter)")
         self.chk_despike.setChecked(True)
-        self.chk_despike.setToolTip("Removes single-sample outliers/spikes using a 3-point median filter.")
         v_ana.addWidget(self.chk_despike)
         
         self.lbl_freq = QLabel("Dominant Freq: 0.0 Hz")
@@ -501,58 +588,37 @@ class AdaptiveGripperGUI(QMainWindow):
         grp_ana.setLayout(v_ana)
         sidebar_layout.addWidget(grp_ana)
 
-        # 7. Plot Settings (Y-Axis)
-        grp_plot = QGroupBox("Plot Settings")
-        v_plot = QVBoxLayout()
+        # 7. Plot 1 Settings
+        # Create Plot 1 first so we can pass it
+        self.plot_time_1 = pg.PlotWidget(title="Time Series 1")
+        self.plot_time_1.setBackground(COLOR_BG)
+        self.plot_time_1.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_time_1.getAxis('bottom').setPen(COLOR_TEXT)
+        self.plot_time_1.getAxis('left').setPen(COLOR_TEXT)
         
-        self.chk_auto_scale = QCheckBox("Auto Scale Y-Axis")
-        self.chk_auto_scale.setChecked(True)
-        self.chk_auto_scale.toggled.connect(self.toggle_axis_scale)
-        v_plot.addWidget(self.chk_auto_scale)
-        
-        # Center DC Option
-        self.chk_center_dc = QCheckBox("Center at DC (Avg)")
-        self.chk_center_dc.toggled.connect(self.toggle_center_dc)
-        v_plot.addWidget(self.chk_center_dc)
-        
-        # Range setting for Center DC
-        h_center_range = QHBoxLayout()
-        h_center_range.addWidget(QLabel("Range (+/-):"))
-        self.spin_center_range = QDoubleSpinBox()
-        self.spin_center_range.setRange(0.1, 1000.0)
-        self.spin_center_range.setValue(20.0)
-        self.spin_center_range.setEnabled(False)
-        h_center_range.addWidget(self.spin_center_range)
-        v_plot.addLayout(h_center_range)
-        
-        # Manual Min/Max
-        h_range = QHBoxLayout()
-        self.spin_y_min = QSpinBox()
-        self.spin_y_min.setRange(-1000, 1000)
-        self.spin_y_min.setValue(-10)
-        self.spin_y_min.setSuffix(" min")
-        self.spin_y_min.setEnabled(False)
-        self.spin_y_min.valueChanged.connect(self.update_axis_range)
-        
-        self.spin_y_max = QSpinBox()
-        self.spin_y_max.setRange(-1000, 1000)
-        self.spin_y_max.setValue(10)
-        self.spin_y_max.setSuffix(" max")
-        self.spin_y_max.setEnabled(False)
-        self.spin_y_max.valueChanged.connect(self.update_axis_range)
+        self.settings_p1 = PlotSettingsWidget("Plot 1 Settings", self.plot_time_1)
+        sidebar_layout.addWidget(self.settings_p1)
 
-        h_range.addWidget(self.spin_y_min)
-        h_range.addWidget(self.spin_y_max)
-        v_plot.addLayout(h_range)
+        # 8. Plot 2 Settings
+        self.plot_time_2 = pg.PlotWidget(title="Time Series 2")
+        self.plot_time_2.setBackground(COLOR_BG)
+        self.plot_time_2.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_time_2.getAxis('bottom').setPen(COLOR_TEXT)
+        self.plot_time_2.getAxis('left').setPen(COLOR_TEXT)
         
-        grp_plot.setLayout(v_plot)
-        sidebar_layout.addWidget(grp_plot)
+        self.chk_show_p2 = QCheckBox("Show Plot 2")
+        self.chk_show_p2.setChecked(False)
+        self.chk_show_p2.toggled.connect(self.update_layout_visibility)
+        
+        self.settings_p2 = PlotSettingsWidget("Plot 2 Settings", self.plot_time_2)
+        # Add checkbox to title or layout? Layout is easier.
+        self.settings_p2.layout.insertWidget(0, self.chk_show_p2)
+        sidebar_layout.addWidget(self.settings_p2)
 
-        # 8. Data Actions
+        # 9. Data Actions
         grp_act = QGroupBox("Data & Labeling")
         v_act = QVBoxLayout()
         
-        # Recording Controls
         hbox_rec = QHBoxLayout()
         self.btn_record = QPushButton("Start Recording")
         self.btn_record.setStyleSheet(f"background-color: {COLOR_PANEL}; color: {COLOR_ACCENT_3};")
@@ -614,14 +680,11 @@ class AdaptiveGripperGUI(QMainWindow):
         tab_viz = QWidget()
         layout_viz = QVBoxLayout(tab_viz)
         
-        splitter = QSplitter(Qt.Orientation.Vertical)
+        self.viz_splitter = QSplitter(Qt.Orientation.Vertical)
         
-        # Time Plot
-        self.plot_time = pg.PlotWidget(title="Time-Series Data")
-        self.plot_time.setBackground(COLOR_BG)
-        self.plot_time.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_time.getAxis('bottom').setPen(COLOR_TEXT)
-        self.plot_time.getAxis('left').setPen(COLOR_TEXT)
+        # Add plots (already created)
+        self.viz_splitter.addWidget(self.plot_time_1)
+        self.viz_splitter.addWidget(self.plot_time_2)
         
         # FFT Plot
         self.plot_fft = pg.PlotWidget(title="Real-Time FFT (Frequency Domain)")
@@ -629,11 +692,12 @@ class AdaptiveGripperGUI(QMainWindow):
         self.plot_fft.showGrid(x=True, y=True, alpha=0.3)
         self.plot_fft.setLabel('bottom', "Frequency", units='Hz')
         self.plot_fft.setLabel('left', "Magnitude")
-
-        splitter.addWidget(self.plot_time)
-        splitter.addWidget(self.plot_fft)
+        self.viz_splitter.addWidget(self.plot_fft)
         
-        layout_viz.addWidget(splitter)
+        layout_viz.addWidget(self.viz_splitter)
+        
+        # Set Initial Visibility
+        self.update_layout_visibility()
         
         # Tab 2: Replay
         self.tab_replay = QWidget()
@@ -652,6 +716,19 @@ class AdaptiveGripperGUI(QMainWindow):
         self.tabs.addTab(self.tab_raw, "Raw Serial")
         
         main_layout.addWidget(self.tabs, stretch=1)
+
+    def update_layout_visibility(self):
+        show_fft = self.chk_show_fft.isChecked()
+        show_p2 = self.chk_show_p2.isChecked()
+        
+        if show_fft:
+            self.plot_fft.setVisible(True)
+            self.plot_time_1.setVisible(False)
+            self.plot_time_2.setVisible(False)
+        else:
+            self.plot_fft.setVisible(False)
+            self.plot_time_1.setVisible(True)
+            self.plot_time_2.setVisible(show_p2)
     
     def setup_replay_ui(self, parent):
         layout = QVBoxLayout(parent)
@@ -675,6 +752,10 @@ class AdaptiveGripperGUI(QMainWindow):
         splitter.addWidget(self.plot_replay_fft)
         
         layout.addWidget(splitter)
+        
+        # Settings
+        self.settings_replay = PlotSettingsWidget("Replay Settings", self.plot_replay)
+        layout.addWidget(self.settings_replay)
         
         # Replay Curves (Time Series)
         self.replay_curves = {}
@@ -744,54 +825,77 @@ class AdaptiveGripperGUI(QMainWindow):
         vbox = QVBoxLayout()
         vbox.setSpacing(10)
         
-        # Helper to create a group
+        # Helper to create a group with P1/P2 columns
         def create_stream_group(label, command, plot_keys):
             # Main Checkbox (Command)
             chk_cmd = QCheckBox(label)
             chk_cmd.toggled.connect(lambda c: self.send_stream_command(command, c))
             
-            # Sub Checkboxes (Plotting)
-            sub_layout = QVBoxLayout()
-            sub_layout.setContentsMargins(20, 0, 0, 0)
+            # Sub Grid for Plot Assignment
+            sub_widget = QWidget()
+            sub_layout = QGridLayout(sub_widget)
+            sub_layout.setContentsMargins(15, 0, 0, 0)
+            sub_layout.setHorizontalSpacing(10)
+            sub_layout.setVerticalSpacing(2)
+            
+            # Header
+            sub_layout.addWidget(QLabel("Signal"), 0, 0)
+            sub_layout.addWidget(QLabel("P1"), 0, 1)
+            sub_layout.addWidget(QLabel("P2"), 0, 2)
+            sub_layout.addWidget(QLabel(""), 0, 3) # Color btn placeholder
             
             sub_checks = {}
+            row_idx = 1
             for key, name in plot_keys.items():
-                row_layout = QHBoxLayout()
-                row_layout.setContentsMargins(0, 0, 0, 0)
+                lbl = QLabel(name)
                 
-                chk = QCheckBox(name)
-                chk.setChecked(False) # Default off
-                chk.setVisible(False) 
-                chk.toggled.connect(lambda c, k=key: self.toggle_plot_visibility(k, c))
+                chk_p1 = QCheckBox()
+                chk_p1.toggled.connect(lambda c, k=key: self.toggle_plot_visibility(k, 1, c))
+                
+                chk_p2 = QCheckBox()
+                chk_p2.toggled.connect(lambda c, k=key: self.toggle_plot_visibility(k, 2, c))
                 
                 btn_style = QPushButton("🎨")
                 btn_style.setToolTip("Edit Style")
-                btn_style.setFixedSize(30, 22)
-                btn_style.setVisible(False)
+                btn_style.setFixedSize(25, 20)
                 btn_style.clicked.connect(lambda _, k=key: self.open_style_picker(k))
                 
-                row_layout.addWidget(chk)
-                row_layout.addWidget(btn_style)
-                row_layout.addStretch()
+                # Default visibility (hidden until command enabled)
+                lbl.setVisible(False)
+                chk_p1.setVisible(False)
+                chk_p2.setVisible(False)
+                btn_style.setVisible(False)
                 
-                sub_layout.addLayout(row_layout)
-                sub_checks[key] = (chk, btn_style)
+                sub_layout.addWidget(lbl, row_idx, 0)
+                sub_layout.addWidget(chk_p1, row_idx, 1)
+                sub_layout.addWidget(chk_p2, row_idx, 2)
+                sub_layout.addWidget(btn_style, row_idx, 3)
+                
+                sub_checks[key] = (lbl, chk_p1, chk_p2, btn_style)
+                row_idx += 1
                 
             # Link visibility/enable
             def on_main_toggle(checked):
-                for chk, btn in sub_checks.values():
-                    chk.setVisible(checked)
+                for lbl, cp1, cp2, btn in sub_checks.values():
+                    lbl.setVisible(checked)
+                    cp1.setVisible(checked)
+                    cp2.setVisible(checked)
                     btn.setVisible(checked)
+                    # Keep previous check state or not? 
+                    # If we hide, maybe we don't need to uncheck, just hide controls.
+                    # But if we don't uncheck, the plot might still show if logic depends on checkbox state?
+                    # The logic depends on toggled signal. If hidden, user can't toggle. 
+                    # We should probably ensure if command is OFF, visibility is forced OFF.
                     if not checked:
-                        chk.setChecked(False)
+                        cp1.setChecked(False)
+                        cp2.setChecked(False)
             
             chk_cmd.toggled.connect(on_main_toggle)
             
             vbox.addWidget(chk_cmd)
-            vbox.addLayout(sub_layout)
+            vbox.addWidget(sub_widget)
             
-            # Return just checkboxes for compatibility
-            return chk_cmd, {k: v[0] for k, v in sub_checks.items()}
+            return chk_cmd, sub_checks
 
         # 1. Mag Filtered -> Mag Low Pass
         self.grp_mag, self.chk_mag = create_stream_group("Mag Low Pass", "mag_lowpass", {
@@ -831,11 +935,15 @@ class AdaptiveGripperGUI(QMainWindow):
         grp.setLayout(vbox)
         layout.addWidget(grp)
 
-    def toggle_plot_visibility(self, key, visible):
-        if key in self.curves:
-            self.curves[key].setVisible(visible)
-        if key in self.replay_curves:
-            self.replay_curves[key].setVisible(visible)
+    def toggle_plot_visibility(self, key, plot_idx, visible):
+        if plot_idx == 1:
+            if key in self.curves_p1:
+                self.curves_p1[key].setVisible(visible)
+            if key in self.replay_curves:
+                self.replay_curves[key].setVisible(visible)
+        elif plot_idx == 2:
+            if key in self.curves_p2:
+                self.curves_p2[key].setVisible(visible)
 
     def send_stream_command(self, key, enabled):
         if self.is_connected and self.serial_thread:
@@ -844,90 +952,35 @@ class AdaptiveGripperGUI(QMainWindow):
             # Log sent command
             self.text_raw.append(f">> SENT: {cmd}")
 
-    def toggle_axis_scale(self, checked):
-        # Enable/Disable spinboxes
-        self.spin_y_min.setEnabled(False)
-        self.spin_y_max.setEnabled(False)
-        self.spin_center_range.setEnabled(False)
-        
-        if checked:
-            # Auto Scale ON
-            self.chk_center_dc.setChecked(False) # Mutually exclusive
-            self.plot_time.enableAutoRange(axis='y')
-            self.plot_replay.enableAutoRange(axis='y')
-        else:
-            # Auto Scale OFF - check if Center DC is ON, otherwise Manual
-            if not self.chk_center_dc.isChecked():
-                self.spin_y_min.setEnabled(True)
-                self.spin_y_max.setEnabled(True)
-                self.update_axis_range()
-
-    def toggle_center_dc(self, checked):
-        if checked:
-            # Center DC ON
-            self.chk_auto_scale.setChecked(False) # Mutually exclusive
-            self.spin_center_range.setEnabled(True)
-            self.spin_y_min.setEnabled(False)
-            self.spin_y_max.setEnabled(False)
-            # Disable auto range so we can set it manually in loop
-            self.plot_time.disableAutoRange(axis='y')
-            self.plot_replay.disableAutoRange(axis='y')
-        else:
-            # Center DC OFF
-            self.spin_center_range.setEnabled(False)
-            # If Auto Scale is also OFF, enable manual
-            if not self.chk_auto_scale.isChecked():
-                self.spin_y_min.setEnabled(True)
-                self.spin_y_max.setEnabled(True)
-                self.update_axis_range()
-
-    def update_axis_range(self):
-        if not self.chk_auto_scale.isChecked() and not self.chk_center_dc.isChecked():
-            ymin = self.spin_y_min.value()
-            ymax = self.spin_y_max.value()
-            if ymin < ymax:
-                self.plot_time.setYRange(ymin, ymax)
-                self.plot_replay.setYRange(ymin, ymax)
-
     def setup_plotting(self):
         # Create curves
-        self.curves = {}
+        self.curves_p1 = {}
+        self.curves_p2 = {}
         
-        def create_curve(key, name):
+        def create_curve(plot_widget, key, name):
             s = self.curve_styles[key]
             pen = pg.mkPen(s['color'], width=s['width'], style=s['style'])
-            return self.plot_time.plot(pen=pen, name=name)
-
-        # Mag Filtered (Low Pass)
-        self.curves['mlx'] = create_curve('mlx', 'Mag X')
-        self.curves['mly'] = create_curve('mly', 'Mag Y')
-        self.curves['mlz'] = create_curve('mlz', 'Mag Z')
-        self.curves['mag'] = create_curve('mag', 'Magnitude')
-        
-        # Mag High Pass
-        self.curves['mhx'] = create_curve('mhx', 'HP X')
-        self.curves['mhy'] = create_curve('mhy', 'HP Y')
-        self.curves['mhz'] = create_curve('mhz', 'HP Z')
-        
-        # Mag Raw
-        self.curves['rmx'] = create_curve('rmx', 'Raw X')
-        self.curves['rmy'] = create_curve('rmy', 'Raw Y')
-        self.curves['rmz'] = create_curve('rmz', 'Raw Z')
-
-        # Current
-        self.curves['cur'] = create_curve('cur', 'Current')
-        
-        # Slip
-        self.curves['slip'] = create_curve('slip', 'Slip State')
-        self.curves['s_ind'] = create_curve('s_ind', 'Slip Ind')
-        
-        # Servo
-        self.curves['srv'] = create_curve('srv', 'Servo')
-        self.curves['grp'] = create_curve('grp', 'Grip')
-        
-        # Initially hide all
-        for c in self.curves.values():
+            c = plot_widget.plot(pen=pen, name=name)
             c.setVisible(False)
+            return c
+
+        keys = ['mlx', 'mly', 'mlz', 'mag',
+                'mhx', 'mhy', 'mhz',
+                'rmx', 'rmy', 'rmz',
+                'cur', 'slip', 's_ind',
+                'srv', 'grp']
+        
+        names = {
+            'mlx': 'Mag X', 'mly': 'Mag Y', 'mlz': 'Mag Z', 'mag': 'Magnitude',
+            'mhx': 'HP X', 'mhy': 'HP Y', 'mhz': 'HP Z',
+            'rmx': 'Raw X', 'rmy': 'Raw Y', 'rmz': 'Raw Z',
+            'cur': 'Current', 'slip': 'Slip State', 's_ind': 'Slip Ind',
+            'srv': 'Servo', 'grp': 'Grip'
+        }
+
+        for key in keys:
+            self.curves_p1[key] = create_curve(self.plot_time_1, key, names[key])
+            self.curves_p2[key] = create_curve(self.plot_time_2, key, names[key])
 
         self.curve_fft = self.plot_fft.plot(pen=pg.mkPen(COLOR_ACCENT_1, width=2, fillLevel=0, brush=(0, 188, 212, 50)))
 
@@ -938,8 +991,10 @@ class AdaptiveGripperGUI(QMainWindow):
         s = self.curve_styles[key]
         pen = pg.mkPen(s['color'], width=s['width'], style=s['style'])
         
-        if key in self.curves:
-            self.curves[key].setPen(pen)
+        if key in self.curves_p1:
+            self.curves_p1[key].setPen(pen)
+        if key in self.curves_p2:
+            self.curves_p2[key].setPen(pen)
         if key in self.replay_curves:
             self.replay_curves[key].setPen(pen)
 
@@ -1055,6 +1110,10 @@ class AdaptiveGripperGUI(QMainWindow):
             self.toggle_connection() # Reset UI
 
     def handle_raw_batch(self, lines):
+        # Optimization: Only update raw text if the tab is visible
+        if self.tabs.currentWidget() != self.tab_raw:
+            return
+
         # Only print the last 10 lines to avoid UI lag, or throttle
         for line in lines[-10:]:
             self.text_raw.append(line)
@@ -1214,29 +1273,29 @@ class AdaptiveGripperGUI(QMainWindow):
                 self.fft_data['freqs'] = freqs
                 self.fft_data['mags'] = mags
 
-        # 2. Update Time Plot
+        # 2. Update Time Plots
         if len(self.data['timestamp']) > 1:
-            # Calculate DC average if needed
-            visible_values = []
             
-            # Update data for all curves (visibility handled by checkboxes)
-            for key, curve in self.curves.items():
-                if key in self.data and curve.isVisible():
-                    y_data = self.data[key]
-                    curve.setData(y_data)
-                    if self.chk_center_dc.isChecked():
-                        visible_values.extend(y_data)
-            
-            # Handle Center DC Scaling
-            if self.chk_center_dc.isChecked() and visible_values:
-                avg = np.mean(visible_values)
-                rng = self.spin_center_range.value()
-                self.plot_time.setYRange(avg - rng, avg + rng, padding=0)
+            def update_plot_curves(curves, settings):
+                visible_vals = []
+                for key, curve in curves.items():
+                    if key in self.data and curve.isVisible():
+                        y_data = self.data[key]
+                        curve.setData(y_data)
+                        if settings.chk_center.isChecked():
+                            visible_vals.extend(y_data)
+                settings.apply_dc_center(visible_vals)
+
+            if self.plot_time_1.isVisible():
+                update_plot_curves(self.curves_p1, self.settings_p1)
+                
+            if self.plot_time_2.isVisible():
+                update_plot_curves(self.curves_p2, self.settings_p2)
                     
         # 3. Update FFT Plot
         # If we have external FFT data, use it.
         # Otherwise, if in SIM mode or default, we might calculate it (but prompt said take from controller)
-        if len(self.fft_data['freqs']) > 0 and len(self.fft_data['mags']) > 0:
+        if len(self.fft_data['freqs']) > 0 and len(self.fft_data['mags']) > 0 and self.plot_fft.isVisible():
              self.curve_fft.setData(self.fft_data['freqs'], self.fft_data['mags'])
         else:
             # Fallback local FFT calculation if no external data and we have time series? 
@@ -1538,7 +1597,8 @@ class AdaptiveGripperGUI(QMainWindow):
                 for k in keys:
                     # If the specific key has data, check it
                     if k in sub_chks and abs(row.get(k, 0)) > 0.000001:
-                        sub_chks[k].setChecked(True)
+                         # sub_chks[k] is (lbl, chk_p1, chk_p2, btn_style)
+                         sub_chks[k][1].setChecked(True)
             else:
                 grp_chk.setChecked(False)
         
@@ -1597,14 +1657,11 @@ class AdaptiveGripperGUI(QMainWindow):
             if curve.isVisible():
                 y = [d.get(key, 0) for d in subset]
                 curve.setData(t, y)
-                if self.chk_center_dc.isChecked():
+                if self.settings_replay.chk_center.isChecked():
                     visible_values.extend(y)
         
         # Handle Center DC Scaling for Replay
-        if self.chk_center_dc.isChecked() and visible_values:
-            avg = np.mean(visible_values)
-            rng = self.spin_center_range.value()
-            self.plot_replay.setYRange(avg - rng, avg + rng, padding=0)
+        self.settings_replay.apply_dc_center(visible_values)
         
         # Update FFT if available
         cur_t = self.replay_data[self.replay_index].get('t', 0)

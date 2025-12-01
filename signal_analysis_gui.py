@@ -10,9 +10,10 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QPushButton, QLabel, QComboBox, QCheckBox, QFileDialog, 
                              QGroupBox, QSplitter, QFrame, QScrollArea, QRadioButton, QButtonGroup,
                              QTabWidget, QTextEdit, QSpinBox, QDoubleSpinBox, QSlider,
-                             QDialog, QFormLayout, QDialogButtonBox, QColorDialog, QGridLayout)
+                             QDialog, QFormLayout, QDialogButtonBox, QColorDialog, QGridLayout,
+                             QMenuBar, QMenu, QToolBar)
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QThread, QObject
-from PyQt6.QtGui import QColor, QPalette, QFont
+from PyQt6.QtGui import QColor, QPalette, QFont, QAction
 import pyqtgraph as pg
 
 # ==========================================
@@ -21,88 +22,129 @@ import pyqtgraph as pg
 DEFAULT_BAUD_RATE = 2000000
 BAUD_RATES = [9600, 115200, 500000, 921600, 1000000, 2000000]
 
-# Grafana-style Colors
-COLOR_BG = "#161719"
-COLOR_PANEL = "#1f1f20"
-COLOR_TEXT = "#c7d0d9"
-COLOR_ACCENT_1 = "#00bcd4" # Cyan
-COLOR_ACCENT_2 = "#e91e63" # Pink
-COLOR_ACCENT_3 = "#8bc34a" # Green
-COLOR_ACCENT_4 = "#ff9800" # Orange
-COLOR_ACCENT_5 = "#9c27b0" # Purple
+# Themes
+THEMES = {
+    "Dark": {
+        "bg": "#161719", "panel": "#1f1f20", "text": "#c7d0d9", "border": "#333",
+        "accent1": "#00bcd4", "accent2": "#e91e63", "accent3": "#8bc34a",
+        "accent4": "#ff9800", "accent5": "#9c27b0",
+        "chart_bg": "#161719", "grid": "#333333", "hover": "#2a2a2b"
+    },
+    "Light": {
+        "bg": "#f0f2f5", "panel": "#ffffff", "text": "#1c1e21", "border": "#ccd0d5",
+        "accent1": "#0078d7", "accent2": "#d32f2f", "accent3": "#2e7d32",
+        "accent4": "#ed6c02", "accent5": "#9c27b0",
+        "chart_bg": "#ffffff", "grid": "#e4e6eb", "hover": "#e4e6eb"
+    }
+}
 
-STYLESHEET = f"""
-QMainWindow {{
-    background-color: {COLOR_BG};
-    color: {COLOR_TEXT};
-}}
-QWidget {{
-    background-color: {COLOR_BG};
-    color: {COLOR_TEXT};
-    font-family: 'Segoe UI', sans-serif;
-    font-size: 10pt;
-}}
-QGroupBox {{
-    border: 1px solid #333;
-    border-radius: 5px;
-    margin-top: 10px;
-    font-weight: bold;
-}}
-QGroupBox::title {{
-    subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 3px;
-}}
-QPushButton {{
-    background-color: {COLOR_PANEL};
-    border: 1px solid #333;
-    border-radius: 4px;
-    padding: 5px 10px;
-    color: {COLOR_TEXT};
-}}
-QPushButton:hover {{
-    background-color: #2a2a2b;
-    border-color: {COLOR_ACCENT_1};
-}}
-QPushButton:pressed {{
-    background-color: {COLOR_ACCENT_1};
-    color: #000;
-}}
-QComboBox {{
-    background-color: {COLOR_PANEL};
-    border: 1px solid #333;
-    border-radius: 4px;
-    padding: 5px;
-}}
-QCheckBox {{
-    spacing: 5px;
-}}
-QCheckBox::indicator {{
-    width: 15px;
-    height: 15px;
-    border-radius: 3px;
-    border: 1px solid #555;
-    background-color: {COLOR_PANEL};
-}}
-QCheckBox::indicator:checked {{
-    background-color: {COLOR_ACCENT_3};
-    border-color: {COLOR_ACCENT_3};
-}}
+# Defaults (Dark)
+COLOR_BG = THEMES["Dark"]["bg"]
+COLOR_PANEL = THEMES["Dark"]["panel"]
+COLOR_TEXT = THEMES["Dark"]["text"]
+COLOR_ACCENT_1 = THEMES["Dark"]["accent1"]
+COLOR_ACCENT_2 = THEMES["Dark"]["accent2"]
+COLOR_ACCENT_3 = THEMES["Dark"]["accent3"]
+COLOR_ACCENT_4 = THEMES["Dark"]["accent4"]
+COLOR_ACCENT_5 = THEMES["Dark"]["accent5"]
+
+def get_stylesheet(theme):
+    return f"""
+    QMainWindow {{
+        background-color: {theme['bg']};
+        color: {theme['text']};
+    }}
+    QWidget {{
+        background-color: {theme['bg']};
+        color: {theme['text']};
+        font-family: 'Segoe UI', sans-serif;
+        font-size: 10pt;
+    }}
+    QGroupBox {{
+        border: 1px solid {theme['border']};
+        border-radius: 5px;
+        margin-top: 10px;
+        font-weight: bold;
+    }}
+    QGroupBox::title {{
+        subcontrol-origin: margin;
+        left: 10px;
+        padding: 0 3px;
+    }}
+    QPushButton {{
+        background-color: {theme['panel']};
+        border: 1px solid {theme['border']};
+        border-radius: 4px;
+        padding: 5px 10px;
+        color: {theme['text']};
+    }}
+    QPushButton:hover {{
+        background-color: {theme['hover']};
+        border-color: {theme['accent1']};
+    }}
+    QPushButton:pressed {{
+        background-color: {theme['accent1']};
+        color: #000;
+    }}
+    QComboBox {{
+        background-color: {theme['panel']};
+        border: 1px solid {theme['border']};
+        border-radius: 4px;
+        padding: 5px;
+        color: {theme['text']};
+    }}
+    QComboBox QAbstractItemView {{
+        background-color: {theme['panel']};
+        color: {theme['text']};
+        selection-background-color: {theme['accent1']};
+        selection-color: #000;
+    }}
+    QCheckBox {{
+        spacing: 5px;
+    }}
+    QCheckBox::indicator {{
+        width: 15px;
+        height: 15px;
+        border-radius: 3px;
+        border: 1px solid #555;
+        background-color: {theme['panel']};
+    }}
+    QCheckBox::indicator:checked {{
+        background-color: {theme['accent3']};
+        border-color: {theme['accent3']};
+    }}
     QLabel {{
-        color: {COLOR_TEXT};
+        color: {theme['text']};
     }}
     QMenu {{
-        background-color: {COLOR_PANEL};
-        border: 1px solid #333;
+        background-color: {theme['panel']};
+        border: 1px solid {theme['border']};
     }}
     QMenu::item {{
         padding: 5px 20px;
-        color: {COLOR_TEXT};
+        color: {theme['text']};
         background-color: transparent;
     }}
     QMenu::item:selected {{
-        background-color: {COLOR_ACCENT_1};
+        background-color: {theme['accent1']};
         color: #000;
+    }}
+    QTabWidget::pane {{ border: 1px solid {theme['border']}; }}
+    QTabBar::tab {{
+        background: {theme['panel']};
+        color: {theme['text']};
+        padding: 8px 20px;
+        border-top-left-radius: 4px;
+        border-top-right-radius: 4px;
+        border: 1px solid {theme['border']};
+        margin-right: 2px;
+    }}
+    QTabBar::tab:selected {{
+        background: {theme['hover']};
+        border-bottom: 2px solid {theme['accent1']};
+    }}
+    QSpinBox#accent_border {{
+        border: 1px solid {theme['accent1']};
     }}
     """
 
@@ -110,8 +152,8 @@ QCheckBox::indicator:checked {{
 # Serial Worker
 # ==========================================
 class SerialWorker(QThread):
-    data_received = pyqtSignal(list) # Changed to emit list of data
-    raw_received = pyqtSignal(list) # Changed to emit list of strings
+    data_received = pyqtSignal(list)
+    raw_received = pyqtSignal(list)
     error_occurred = pyqtSignal(str)
 
     def __init__(self, port, baud):
@@ -125,21 +167,15 @@ class SerialWorker(QThread):
 
     def run(self):
         try:
-            # timeout=0 for non-blocking read
-            # dsrdtr=False help with flow control
-            # Removed explicit dtr/rts setting as it causes ESP32 reset on some boards
             self.ser = serial.Serial(self.port, self.baud, timeout=0, dsrdtr=False)
             
             while self.running and self.ser.is_open:
-                # Send pending commands
                 while self.pending_commands:
                     cmd = self.pending_commands.pop(0)
                     self.ser.write((cmd + '\n').encode())
 
-                # Check for data
                 if self.ser.in_waiting:
                     try:
-                        # Read everything available at once
                         raw_data = self.ser.read(self.ser.in_waiting)
                         text_data = raw_data.decode('utf-8', errors='ignore')
                         
@@ -147,12 +183,9 @@ class SerialWorker(QThread):
                         
                         if '\n' in self.read_buffer:
                             lines = self.read_buffer.split('\n')
-                            # Keep the last part (potential partial line) in buffer
                             self.read_buffer = lines.pop()
                             
                             batch_data = []
-                            # Only keep a subset of raw lines to emit to avoid UI flooding
-                            # We'll just take the last 20 for logging purposes
                             raw_lines_to_emit = lines[-20:] if len(lines) > 20 else lines
                             
                             for line in lines:
@@ -163,31 +196,22 @@ class SerialWorker(QThread):
                                 payload_str = line
                                 valid_payload = False
                                 
-                                # Checksum verification (Format: {json}|HEX)
                                 if '|' in line:
                                     parts = line.rsplit('|', 1)
                                     if len(parts) == 2:
                                         content, chk_hex = parts
                                         try:
-                                            # Strip whitespace from hex (e.g. \r)
                                             chk_hex = chk_hex.strip()
                                             recv_chk = int(chk_hex, 16)
-                                            
-                                            # Calculate XOR checksum
                                             calc_chk = 0
                                             for char in content:
                                                 calc_chk ^= ord(char)
-                                            
                                             if calc_chk == recv_chk:
                                                 payload_str = content
                                                 valid_payload = True
-                                            else:
-                                                # Checksum mismatch
-                                                pass
                                         except ValueError:
                                             pass
                                 else:
-                                    # Strict Mode: Reject lines without checksums to prevent spikes from corruption
                                     valid_payload = False
 
                                 if valid_payload and payload_str.startswith('{') and payload_str.endswith('}'):
@@ -206,7 +230,6 @@ class SerialWorker(QThread):
                     except Exception:
                         pass
                 else:
-                    # Sleep briefly to yield CPU if no data
                     self.msleep(1)
                     
         except Exception as e:
@@ -237,7 +260,6 @@ class SignalGenerator:
     
     def next_sample(self):
         self.t += 0.01
-        # Generate some sine waves + noise
         mx = 10 * np.sin(2 * np.pi * 1.0 * self.t) + np.random.normal(0, 0.5)
         my = 10 * np.sin(2 * np.pi * 2.0 * self.t + np.pi/4) + np.random.normal(0, 0.5)
         mz = 10 * np.sin(2 * np.pi * 0.5 * self.t + np.pi/2) + np.random.normal(0, 0.5)
@@ -245,11 +267,11 @@ class SignalGenerator:
         cur = 5 + 2 * np.sin(2 * np.pi * 5.0 * self.t) + np.random.normal(0, 0.2)
         
         return {
-            "mlx": mx, "mly": my, "mlz": mz, # Low pass
-            "mhx": mx * 0.1, "mhy": my * 0.1, "mhz": mz * 0.1, # Fake high pass
+            "mlx": mx, "mly": my, "mlz": mz,
+            "mhx": mx * 0.1, "mhy": my * 0.1, "mhz": mz * 0.1,
             "rmx": mx + np.random.normal(0, 2), "rmy": my + np.random.normal(0, 2), "rmz": mz + np.random.normal(0, 2),
             "mag": mag, "cur": cur, "slip": 0,
-            "t": self.t * 1000 # simulate ms timestamp
+            "t": self.t * 1000 
         }
 
 # ==========================================
@@ -297,7 +319,6 @@ class StyleEditorDialog(QDialog):
         
         layout.addLayout(form)
         
-        # Buttons
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -328,8 +349,7 @@ class PlotSettingsWidget(QGroupBox):
         self.spin_window.setRange(10, 50000)
         self.spin_window.setValue(1000)
         self.spin_window.setSingleStep(100)
-        # Style the spinbox to be more visible
-        self.spin_window.setStyleSheet(f"border: 1px solid {COLOR_ACCENT_1};")
+        self.spin_window.setObjectName("accent_border")
         h_x.addWidget(self.spin_window)
         self.layout.addLayout(h_x)
 
@@ -418,7 +438,7 @@ class AdaptiveGripperGUI(QMainWindow):
         self.resize(1200, 800)
         
         # Data Storage
-        self.buffer_size = 50000  # Increased buffer size to support larger windows
+        self.buffer_size = 50000
         self.data = {
             'mlx': [], 'mly': [], 'mlz': [], 'mag': [], 
             'mhx': [], 'mhy': [], 'mhz': [],
@@ -427,32 +447,25 @@ class AdaptiveGripperGUI(QMainWindow):
             'srv': [], 'grp': [],
             'timestamp': [], 'recv_ts': []
         }
-        # Buffer for despiking (median filter)
         self.spike_buffer = {k: [] for k in self.data.keys() if k != 'timestamp'}
         
         self.fft_data = {'freqs': [], 'mags': []}
-        self.recorded_events = [] # For start/end of segments (Labeling)
+        self.recorded_events = []
         self.current_segment_start = None
         
         # Recording & Replay
         self.is_recording = False
-        self.recording_data = [] # List of dicts for the current recording session
-        self.recording_fft = []  # List of dicts for FFT data
-        self.replay_data = []    # List of dicts for replay
-        self.replay_fft_data = [] # List of dicts for replay FFT
+        self.recording_data = [] 
+        self.recording_fft = [] 
+        self.replay_data = []    
+        self.replay_fft_data = [] 
         self.replay_index = 0
-        self.replay_buffer = {
-            'mlx': [], 'mly': [], 'mlz': [], 'mag': [], 
-            'mhx': [], 'mhy': [], 'mhz': [],
-            'cur': [], 'slip': [], 'srv': [], 'grp': [], 'timestamp': []
-        }
         
         self.serial_thread = None
         self.sim_generator = SignalGenerator()
         self.is_simulating = False
         self.is_connected = False
         
-        # Curve Styles Configuration
         self.curve_styles = {
             'mlx': {'color': COLOR_ACCENT_2, 'style': Qt.PenStyle.SolidLine, 'width': 2},
             'mly': {'color': COLOR_ACCENT_3, 'style': Qt.PenStyle.SolidLine, 'width': 2},
@@ -471,106 +484,154 @@ class AdaptiveGripperGUI(QMainWindow):
             'grp': {'color': COLOR_ACCENT_5, 'style': Qt.PenStyle.DashLine, 'width': 1},
         }
         
+        # Theme Init
+        self.current_theme = "Dark"
+
         # Setup UI
         self.setup_ui()
         self.setup_plotting()
-        self.apply_styles()
+        self.apply_theme("Dark")
         
         # Timer for updates
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_loop)
-        self.timer.start(33) # ~30 FPS
+        self.timer.start(33)
 
         # Timer for replay
         self.replay_timer = QTimer()
         self.replay_timer.timeout.connect(self.update_replay_loop)
 
+    def apply_theme(self, theme_name):
+        if theme_name not in THEMES: return
+        self.current_theme = theme_name
+        theme = THEMES[theme_name]
+        
+        self.setStyleSheet(get_stylesheet(theme))
+        
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(theme['bg']))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(theme['text']))
+        palette.setColor(QPalette.ColorRole.Base, QColor(theme['panel']))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(theme['bg']))
+        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(theme['text']))
+        palette.setColor(QPalette.ColorRole.ToolTipText, QColor(theme['text']))
+        palette.setColor(QPalette.ColorRole.Text, QColor(theme['text']))
+        palette.setColor(QPalette.ColorRole.Button, QColor(theme['panel']))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(theme['text']))
+        palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
+        palette.setColor(QPalette.ColorRole.Link, QColor(theme['accent1']))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(theme['accent1']))
+        palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
+        QApplication.instance().setPalette(palette)
+        
+        pg.setConfigOption('background', theme['chart_bg'])
+        pg.setConfigOption('foreground', theme['text'])
+        
+        plots = [self.plot_time_1, self.plot_time_2, self.plot_fft]
+        if hasattr(self, 'plot_replay_1'): plots.extend([self.plot_replay_1, self.plot_replay_2, self.plot_replay_fft])
+        
+        for p in plots:
+            if hasattr(p, 'setBackground'):
+                p.setBackground(theme['chart_bg'])
+                p.getAxis('bottom').setPen(theme['text'])
+                p.getAxis('left').setPen(theme['text'])
+                if p.plotItem.titleLabel:
+                    p.plotItem.titleLabel.setAttr('color', theme['text'])
+
+    def setup_menu(self):
+        menubar = self.menuBar()
+        menubar.clear()
+        
+        file_menu = menubar.addMenu('&File')
+        load_action = QAction('Load Replay', self)
+        load_action.triggered.connect(self.load_replay_file)
+        file_menu.addAction(load_action)
+        
+        import_action = QAction('Import Data', self)
+        import_action.triggered.connect(self.import_data)
+        file_menu.addAction(import_action)
+        
+        file_menu.addSeparator()
+        exit_action = QAction('Exit', self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        view_menu = menubar.addMenu('&View')
+        theme_menu = view_menu.addMenu('Theme')
+        dark_action = QAction('Dark', self)
+        dark_action.triggered.connect(lambda: self.apply_theme("Dark"))
+        theme_menu.addAction(dark_action)
+        light_action = QAction('Light', self)
+        light_action.triggered.connect(lambda: self.apply_theme("Light"))
+        theme_menu.addAction(light_action)
+        
+        view_menu.addSeparator()
+        self.action_show_fft = QAction('Show FFT', self, checkable=True)
+        self.action_show_fft.toggled.connect(self.toggle_fft_view_menu)
+        view_menu.addAction(self.action_show_fft)
+        
+        toolbar = QToolBar("Connection")
+        self.addToolBar(toolbar)
+        
+        toolbar.addWidget(QLabel(" Port: "))
+        self.combo_ports = QComboBox()
+        self.combo_ports.setMinimumWidth(120)
+        self.refresh_ports()
+        toolbar.addWidget(self.combo_ports)
+        
+        toolbar.addWidget(QLabel(" Baud: "))
+        self.combo_baud = QComboBox()
+        for b in BAUD_RATES: self.combo_baud.addItem(str(b))
+        self.combo_baud.setCurrentText(str(DEFAULT_BAUD_RATE))
+        toolbar.addWidget(self.combo_baud)
+        
+        toolbar.addSeparator()
+        self.action_connect = QAction("Connect", self)
+        self.action_connect.triggered.connect(self.toggle_connection)
+        toolbar.addAction(self.action_connect)
+        
+        btn_refresh = QAction("Refresh", self)
+        btn_refresh.triggered.connect(self.refresh_ports)
+        toolbar.addAction(btn_refresh)
+        
+        toolbar.addSeparator()
+        self.chk_sim = QCheckBox("Simulation")
+        self.chk_sim.toggled.connect(self.toggle_simulation)
+        toolbar.addWidget(self.chk_sim)
+        
+        toolbar.addSeparator()
+        self.btn_record = QPushButton(" Record ")
+        self.btn_record.setCheckable(True)
+        self.btn_record.clicked.connect(self.toggle_recording)
+        toolbar.addWidget(self.btn_record)
+
+    def toggle_fft_view_menu(self, checked):
+        self.update_layout_visibility()
+
     def setup_ui(self):
-        # Central Widget & Main Layout
+        self.setup_menu()
+        
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QHBoxLayout(central)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # --- Sidebar ---
         scroll_sidebar = QScrollArea()
         scroll_sidebar.setWidgetResizable(True)
-        scroll_sidebar.setFixedWidth(360) # Slightly wider for new columns
-        scroll_sidebar.setStyleSheet(f"background-color: {COLOR_PANEL}; border: none;")
+        scroll_sidebar.setFixedWidth(380)
+        scroll_sidebar.setFrameShape(QFrame.Shape.NoFrame)
         
-        sidebar = QWidget()
-        sidebar.setStyleSheet(f"background-color: {COLOR_PANEL};")
-        sidebar_layout = QVBoxLayout(sidebar)
+        self.sidebar = QWidget()
+        sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(10, 15, 10, 15)
         sidebar_layout.setSpacing(15)
-        
-        scroll_sidebar.setWidget(sidebar)
+        scroll_sidebar.setWidget(self.sidebar)
 
-        # Title
-        title = QLabel("SIGNAL CONTROLS")
-        title.setStyleSheet(f"color: {COLOR_ACCENT_1}; font-weight: bold; font-size: 12pt;")
-        sidebar_layout.addWidget(title)
-
-        # 1. Connection
-        grp_conn = QGroupBox("Connection")
-        v_conn = QVBoxLayout()
-        
-        # Port Selection
-        self.combo_ports = QComboBox()
-        self.refresh_ports()
-        v_conn.addWidget(QLabel("Port:"))
-        v_conn.addWidget(self.combo_ports)
-        
-        # Baud Selection
-        self.combo_baud = QComboBox()
-        for b in BAUD_RATES:
-            self.combo_baud.addItem(str(b))
-        self.combo_baud.setCurrentText(str(DEFAULT_BAUD_RATE))
-        v_conn.addWidget(QLabel("Baud Rate:"))
-        v_conn.addWidget(self.combo_baud)
-
-        # Connect/Disconnect
-        self.btn_connect = QPushButton("Connect Serial")
-        self.btn_connect.clicked.connect(self.toggle_connection)
-        v_conn.addWidget(self.btn_connect)
-        
-        # Refresh Ports
-        btn_refresh = QPushButton("Refresh Ports")
-        btn_refresh.clicked.connect(self.refresh_ports)
-        v_conn.addWidget(btn_refresh)
-
-        grp_conn.setLayout(v_conn)
-        sidebar_layout.addWidget(grp_conn)
-
-        # 2. Source Mode
-        grp_source = QGroupBox("Data Source")
-        v_source = QVBoxLayout()
-        self.radio_serial = QRadioButton("Serial Stream")
-        self.radio_sim = QRadioButton("Simulation")
-        self.radio_serial.setChecked(True)
-        self.radio_group = QButtonGroup()
-        self.radio_group.addButton(self.radio_serial)
-        self.radio_group.addButton(self.radio_sim)
-        v_source.addWidget(self.radio_serial)
-        v_source.addWidget(self.radio_sim)
-        
-        self.radio_sim.toggled.connect(self.toggle_simulation)
-        
-        grp_source.setLayout(v_source)
-        sidebar_layout.addWidget(grp_source)
-
-        # 3. Telemetry & Plots (Modified)
         self.setup_telemetry_ui(sidebar_layout)
 
-        # 4. View Configuration & FFT
-        grp_fft_cfg = QGroupBox("FFT & View Config")
+        grp_fft_cfg = QGroupBox("FFT Config")
         v_fft_cfg = QVBoxLayout()
-        
-        self.chk_show_fft = QCheckBox("Show FFT Plot")
-        self.chk_show_fft.setChecked(False) # Default hidden
-        self.chk_show_fft.toggled.connect(self.update_layout_visibility)
-        v_fft_cfg.addWidget(self.chk_show_fft)
         
         h_samp = QHBoxLayout()
         h_samp.addWidget(QLabel("Samples:"))
@@ -588,7 +649,6 @@ class AdaptiveGripperGUI(QMainWindow):
         h_rate.addWidget(self.spin_fft_rate)
         v_fft_cfg.addLayout(h_rate)
         
-        # FFT Y-Scale
         h_fft_scale = QHBoxLayout()
         self.chk_fft_auto = QCheckBox("Auto Y-Scale")
         self.chk_fft_auto.setChecked(True)
@@ -607,121 +667,46 @@ class AdaptiveGripperGUI(QMainWindow):
         grp_fft_cfg.setLayout(v_fft_cfg)
         sidebar_layout.addWidget(grp_fft_cfg)
 
-        # 5. Analysis
-        grp_ana = QGroupBox("Analysis")
-        v_ana = QVBoxLayout()
-        
-        self.chk_despike = QCheckBox("Despike (Median Filter)")
-        self.chk_despike.setChecked(True)
-        v_ana.addWidget(self.chk_despike)
-        
-        self.lbl_freq = QLabel("Dominant Freq: 0.0 Hz")
-        self.lbl_freq.setStyleSheet(f"color: {COLOR_ACCENT_1}; font-size: 11pt; font-weight: bold;")
-        v_ana.addWidget(self.lbl_freq)
-        grp_ana.setLayout(v_ana)
-        sidebar_layout.addWidget(grp_ana)
-
-        # 7. Plot 1 Settings
-        # Create Plot 1 first so we can pass it
         self.plot_time_1 = pg.PlotWidget(title="Time Series 1")
-        self.plot_time_1.setBackground(COLOR_BG)
         self.plot_time_1.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_time_1.getAxis('bottom').setPen(COLOR_TEXT)
-        self.plot_time_1.getAxis('left').setPen(COLOR_TEXT)
         
         self.settings_p1 = PlotSettingsWidget("Plot 1 Settings", self.plot_time_1)
         sidebar_layout.addWidget(self.settings_p1)
 
-        # 8. Plot 2 Settings
         self.plot_time_2 = pg.PlotWidget(title="Time Series 2")
-        self.plot_time_2.setBackground(COLOR_BG)
         self.plot_time_2.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_time_2.getAxis('bottom').setPen(COLOR_TEXT)
-        self.plot_time_2.getAxis('left').setPen(COLOR_TEXT)
         
         self.chk_show_p2 = QCheckBox("Show Plot 2")
         self.chk_show_p2.setChecked(False)
         self.chk_show_p2.toggled.connect(self.update_layout_visibility)
         
         self.settings_p2 = PlotSettingsWidget("Plot 2 Settings", self.plot_time_2)
-        # Add checkbox to title or layout? Layout is easier.
         self.settings_p2.layout.insertWidget(0, self.chk_show_p2)
         sidebar_layout.addWidget(self.settings_p2)
 
-        # 9. Data Actions
-        grp_act = QGroupBox("Data & Labeling")
-        v_act = QVBoxLayout()
-        
-        hbox_rec = QHBoxLayout()
-        self.btn_record = QPushButton("Start Recording")
-        self.btn_record.setStyleSheet(f"background-color: {COLOR_PANEL}; color: {COLOR_ACCENT_3};")
-        self.btn_record.clicked.connect(self.toggle_recording)
-        hbox_rec.addWidget(self.btn_record)
-        v_act.addLayout(hbox_rec)
-
-        hbox_label = QHBoxLayout()
-        self.btn_success = QPushButton("Mark Success")
-        self.btn_success.setStyleSheet(f"background-color: {COLOR_ACCENT_3}; color: #000;")
-        self.btn_fail = QPushButton("Mark Fail")
-        self.btn_fail.setStyleSheet(f"background-color: {COLOR_ACCENT_2}; color: #fff;")
-        hbox_label.addWidget(self.btn_success)
-        hbox_label.addWidget(self.btn_fail)
-        
-        self.btn_success.clicked.connect(lambda: self.mark_event("Success"))
-        self.btn_fail.clicked.connect(lambda: self.mark_event("Failure"))
-        
-        self.btn_export = QPushButton("EXPORT DATA (CSV)")
-        self.btn_export.setMinimumHeight(40)
-        self.btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_export.setStyleSheet(f"""
-            background-color: {COLOR_ACCENT_4}; 
-            color: #000; 
-            font-weight: bold; 
-            font-size: 12pt;
-            border-radius: 5px;
-            border: 2px solid #d68100;
-        """)
-        self.btn_export.clicked.connect(self.export_data)
-
-        v_act.addLayout(hbox_label)
-        v_act.addWidget(self.btn_export)
-        
-        grp_act.setLayout(v_act)
-        sidebar_layout.addWidget(grp_act)
+        grp_ana = QGroupBox("Analysis")
+        v_ana = QVBoxLayout()
+        self.chk_despike = QCheckBox("Despike (Median Filter)")
+        self.chk_despike.setChecked(True)
+        v_ana.addWidget(self.chk_despike)
+        self.lbl_freq = QLabel("Dominant Freq: 0.0 Hz")
+        v_ana.addWidget(self.lbl_freq)
+        grp_ana.setLayout(v_ana)
+        sidebar_layout.addWidget(grp_ana)
         
         sidebar_layout.addStretch()
         main_layout.addWidget(scroll_sidebar)
 
-        # --- Main Content Area (Tabs) ---
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(f"""
-            QTabWidget::pane {{ border: 1px solid #444; }}
-            QTabBar::tab {{
-                background: {COLOR_PANEL};
-                color: {COLOR_TEXT};
-                padding: 8px 20px;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-            }}
-            QTabBar::tab:selected {{
-                background: #333;
-                border-bottom: 2px solid {COLOR_ACCENT_1};
-            }}
-        """)
         
-        # Tab 1: Visualizer
         tab_viz = QWidget()
         layout_viz = QVBoxLayout(tab_viz)
         
         self.viz_splitter = QSplitter(Qt.Orientation.Vertical)
-        
-        # Add plots (already created)
         self.viz_splitter.addWidget(self.plot_time_1)
         self.viz_splitter.addWidget(self.plot_time_2)
         
-        # FFT Plot
-        self.plot_fft = pg.PlotWidget(title="Real-Time FFT (Frequency Domain)")
-        self.plot_fft.setBackground(COLOR_BG)
+        self.plot_fft = pg.PlotWidget(title="Real-Time FFT")
         self.plot_fft.showGrid(x=True, y=True, alpha=0.3)
         self.plot_fft.setLabel('bottom', "Frequency", units='Hz')
         self.plot_fft.setLabel('left', "Magnitude")
@@ -729,14 +714,9 @@ class AdaptiveGripperGUI(QMainWindow):
         
         layout_viz.addWidget(self.viz_splitter)
         
-        # Set Initial Visibility
-        self.update_layout_visibility()
-        
-        # Tab 2: Replay
         self.tab_replay = QWidget()
         self.setup_replay_ui(self.tab_replay)
         
-        # Tab 3: Raw Output
         self.tab_raw = QWidget()
         layout_raw = QVBoxLayout(self.tab_raw)
         self.text_raw = QTextEdit()
@@ -749,9 +729,10 @@ class AdaptiveGripperGUI(QMainWindow):
         self.tabs.addTab(self.tab_raw, "Raw Serial")
         
         main_layout.addWidget(self.tabs, stretch=1)
+        self.update_layout_visibility()
 
     def update_layout_visibility(self):
-        show_fft = self.chk_show_fft.isChecked()
+        show_fft = self.action_show_fft.isChecked()
         show_p2 = self.chk_show_p2.isChecked()
         
         if show_fft:
@@ -762,79 +743,17 @@ class AdaptiveGripperGUI(QMainWindow):
             self.plot_fft.setVisible(False)
             self.plot_time_1.setVisible(True)
             self.plot_time_2.setVisible(show_p2)
+            
+            # Ensure equal splitting when P2 is shown
+            if show_p2:
+                self.viz_splitter.setSizes([1000, 1000, 0])
+            else:
+                self.viz_splitter.setSizes([1000, 0, 0])
     
     def setup_replay_ui(self, parent):
         layout = QVBoxLayout(parent)
         
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        
-        # Plot Time Series
-        self.plot_replay = pg.PlotWidget(title="Replay Data")
-        self.plot_replay.setBackground(COLOR_BG)
-        self.plot_replay.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_replay.getAxis('bottom').setPen(COLOR_TEXT)
-        self.plot_replay.getAxis('left').setPen(COLOR_TEXT)
-        splitter.addWidget(self.plot_replay)
-        
-        # Plot FFT
-        self.plot_replay_fft = pg.PlotWidget(title="Replay FFT")
-        self.plot_replay_fft.setBackground(COLOR_BG)
-        self.plot_replay_fft.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_replay_fft.setLabel('bottom', "Frequency", units='Hz')
-        self.plot_replay_fft.setLabel('left', "Magnitude")
-        splitter.addWidget(self.plot_replay_fft)
-        
-        layout.addWidget(splitter)
-        
-        # Settings
-        self.settings_replay = PlotSettingsWidget("Replay Settings", self.plot_replay)
-        layout.addWidget(self.settings_replay)
-        
-        # Replay Curves (Time Series)
-        self.replay_curves = {}
-        
-        def create_replay_curve(key, name):
-            s = self.curve_styles[key]
-            pen = pg.mkPen(s['color'], width=s['width'], style=s['style'])
-            return self.plot_replay.plot(pen=pen, name=name)
-        
-        # Mag Filtered (Low Pass)
-        self.replay_curves['mlx'] = create_replay_curve('mlx', 'Mag X')
-        self.replay_curves['mly'] = create_replay_curve('mly', 'Mag Y')
-        self.replay_curves['mlz'] = create_replay_curve('mlz', 'Mag Z')
-        self.replay_curves['mag'] = create_replay_curve('mag', 'Magnitude')
-        
-        # Mag High Pass
-        self.replay_curves['mhx'] = create_replay_curve('mhx', 'HP X')
-        self.replay_curves['mhy'] = create_replay_curve('mhy', 'HP Y')
-        self.replay_curves['mhz'] = create_replay_curve('mhz', 'HP Z')
-        
-        # Mag Raw
-        self.replay_curves['rmx'] = create_replay_curve('rmx', 'Raw X')
-        self.replay_curves['rmy'] = create_replay_curve('rmy', 'Raw Y')
-        self.replay_curves['rmz'] = create_replay_curve('rmz', 'Raw Z')
-
-        # Current
-        self.replay_curves['cur'] = create_replay_curve('cur', 'Current')
-        
-        # Slip
-        self.replay_curves['slip'] = create_replay_curve('slip', 'Slip State')
-        self.replay_curves['s_ind'] = create_replay_curve('s_ind', 'Slip Ind')
-        
-        # Servo
-        self.replay_curves['srv'] = create_replay_curve('srv', 'Servo')
-        self.replay_curves['grp'] = create_replay_curve('grp', 'Grip')
-
-        # Replay Curve (FFT)
-        self.curve_replay_fft = self.plot_replay_fft.plot(pen=pg.mkPen(COLOR_ACCENT_1, width=2, fillLevel=0, brush=(0, 188, 212, 50)))
-
-        # Initially hide all
-        for c in self.replay_curves.values():
-            c.setVisible(False)
-        
-        # Controls
         h_controls = QHBoxLayout()
-        
         self.btn_load_replay = QPushButton("Load File")
         self.btn_load_replay.clicked.connect(self.load_replay_file)
         h_controls.addWidget(self.btn_load_replay)
@@ -842,7 +761,22 @@ class AdaptiveGripperGUI(QMainWindow):
         self.btn_play_replay = QPushButton("Play")
         self.btn_play_replay.clicked.connect(self.toggle_replay)
         h_controls.addWidget(self.btn_play_replay)
+
+        btn_step_back = QPushButton("<<")
+        btn_step_back.clicked.connect(lambda: self.step_replay(-1))
+        h_controls.addWidget(btn_step_back)
         
+        btn_step_fwd = QPushButton(">>")
+        btn_step_fwd.clicked.connect(lambda: self.step_replay(1))
+        h_controls.addWidget(btn_step_fwd)
+        
+        h_controls.addWidget(QLabel("Speed (ms):"))
+        self.spin_replay_speed = QSpinBox()
+        self.spin_replay_speed.setRange(1, 1000)
+        self.spin_replay_speed.setValue(33)
+        self.spin_replay_speed.valueChanged.connect(self.update_replay_timer)
+        h_controls.addWidget(self.spin_replay_speed)
+
         self.slider_replay = QSlider(Qt.Orientation.Horizontal)
         self.slider_replay.setRange(0, 100)
         self.slider_replay.sliderMoved.connect(self.on_replay_slider_move)
@@ -852,30 +786,132 @@ class AdaptiveGripperGUI(QMainWindow):
         h_controls.addWidget(self.lbl_replay_time)
         
         layout.addLayout(h_controls)
+        
+        h_view = QHBoxLayout()
+        self.chk_replay_fft = QCheckBox("Show FFT")
+        self.chk_replay_fft.setChecked(True)
+        self.chk_replay_fft.toggled.connect(self.update_replay_layout)
+        h_view.addWidget(self.chk_replay_fft)
+        
+        self.chk_replay_p2 = QCheckBox("Show 2nd Graph")
+        self.chk_replay_p2.toggled.connect(self.update_replay_layout)
+        h_view.addWidget(self.chk_replay_p2)
+        
+        layout.addLayout(h_view)
+        
+        self.replay_splitter = QSplitter(Qt.Orientation.Vertical)
+        
+        self.plot_replay_1 = pg.PlotWidget(title="Replay Time Series 1")
+        self.replay_splitter.addWidget(self.plot_replay_1)
+        
+        self.plot_replay_2 = pg.PlotWidget(title="Replay Time Series 2")
+        self.plot_replay_2.setVisible(False)
+        self.replay_splitter.addWidget(self.plot_replay_2)
+        
+        self.plot_replay_fft = pg.PlotWidget(title="Replay FFT")
+        self.replay_splitter.addWidget(self.plot_replay_fft)
+        
+        layout.addWidget(self.replay_splitter)
+
+        h_settings = QHBoxLayout()
+        self.settings_replay_1 = PlotSettingsWidget("Graph 1 Settings", self.plot_replay_1)
+        h_settings.addWidget(self.settings_replay_1)
+        
+        self.settings_replay_2 = PlotSettingsWidget("Graph 2 Settings", self.plot_replay_2)
+        self.settings_replay_2.setVisible(False)
+        h_settings.addWidget(self.settings_replay_2)
+        
+        layout.addLayout(h_settings)
+        
+        self.replay_curves_p1 = {}
+        self.replay_curves_p2 = {}
+        
+        def create_replay_curve(plot_widget, key, name):
+            s = self.curve_styles[key]
+            pen = pg.mkPen(s['color'], width=s['width'], style=s['style'])
+            return plot_widget.plot(pen=pen, name=name)
+        
+        keys = ['mlx', 'mly', 'mlz', 'mag', 'mhx', 'mhy', 'mhz', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']
+        names = {
+            'mlx': 'Mag X', 'mly': 'Mag Y', 'mlz': 'Mag Z', 'mag': 'Magnitude',
+            'mhx': 'HP X', 'mhy': 'HP Y', 'mhz': 'HP Z',
+            'rmx': 'Raw X', 'rmy': 'Raw Y', 'rmz': 'Raw Z',
+            'cur': 'Current', 'slip': 'Slip State', 's_ind': 'Slip Ind',
+            'srv': 'Servo', 'grp': 'Grip'
+        }
+
+        for key in keys:
+            self.replay_curves_p1[key] = create_replay_curve(self.plot_replay_1, key, names[key])
+            self.replay_curves_p2[key] = create_replay_curve(self.plot_replay_2, key, names[key])
+            
+            self.replay_curves_p1[key].setVisible(False)
+            self.replay_curves_p2[key].setVisible(False)
+
+        # Replay Curve (FFT)
+        self.curve_replay_fft = self.plot_replay_fft.plot(pen=pg.mkPen(COLOR_ACCENT_1, width=2, fillLevel=0, brush=(0, 188, 212, 50)))
+        
+        # For backward compatibility with existing logic that uses self.replay_curves
+        self.replay_curves = self.replay_curves_p1
+
+    def step_replay(self, direction):
+        if not self.replay_data: return
+        self.replay_index += direction
+        if self.replay_index < 0: self.replay_index = 0
+        if self.replay_index >= len(self.replay_data): self.replay_index = len(self.replay_data) - 1
+        self.slider_replay.setValue(self.replay_index)
+        self.update_replay_plot_snapshot()
+
+    def update_replay_timer(self, val):
+        if self.replay_timer.isActive():
+            self.replay_timer.setInterval(val)
+
+    def update_replay_layout(self):
+        show_fft = self.chk_replay_fft.isChecked()
+        show_p2 = self.chk_replay_p2.isChecked()
+        
+        self.plot_replay_fft.setVisible(show_fft)
+        self.plot_replay_2.setVisible(show_p2)
+        self.settings_replay_2.setVisible(show_p2)
+        
+        # Distribute space in replay splitter
+        sizes = []
+        
+        # 1. Plot 1 (Always visible)
+        sizes.append(1000)
+        
+        # 2. Plot 2
+        if show_p2:
+            sizes.append(1000)
+        else:
+            sizes.append(0)
+            
+        # 3. FFT
+        if show_fft:
+            sizes.append(1000)
+        else:
+            sizes.append(0)
+            
+        self.replay_splitter.setSizes(sizes)
 
     def setup_telemetry_ui(self, layout):
         grp = QGroupBox("Telemetry & Plotting")
         vbox = QVBoxLayout()
         vbox.setSpacing(10)
         
-        # Helper to create a group with P1/P2 columns
         def create_stream_group(label, command, plot_keys):
-            # Main Checkbox (Command)
             chk_cmd = QCheckBox(label)
             chk_cmd.toggled.connect(lambda c: self.send_stream_command(command, c))
             
-            # Sub Grid for Plot Assignment
             sub_widget = QWidget()
             sub_layout = QGridLayout(sub_widget)
             sub_layout.setContentsMargins(15, 0, 0, 0)
             sub_layout.setHorizontalSpacing(10)
             sub_layout.setVerticalSpacing(2)
             
-            # Header
             sub_layout.addWidget(QLabel("Signal"), 0, 0)
             sub_layout.addWidget(QLabel("P1"), 0, 1)
             sub_layout.addWidget(QLabel("P2"), 0, 2)
-            sub_layout.addWidget(QLabel(""), 0, 3) # Color btn placeholder
+            sub_layout.addWidget(QLabel(""), 0, 3) 
             
             sub_checks = {}
             row_idx = 1
@@ -893,7 +929,6 @@ class AdaptiveGripperGUI(QMainWindow):
                 btn_style.setFixedSize(25, 20)
                 btn_style.clicked.connect(lambda _, k=key: self.open_style_picker(k))
                 
-                # Default visibility (hidden until command enabled)
                 lbl.setVisible(False)
                 chk_p1.setVisible(False)
                 chk_p2.setVisible(False)
@@ -907,18 +942,12 @@ class AdaptiveGripperGUI(QMainWindow):
                 sub_checks[key] = (lbl, chk_p1, chk_p2, btn_style)
                 row_idx += 1
                 
-            # Link visibility/enable
             def on_main_toggle(checked):
                 for lbl, cp1, cp2, btn in sub_checks.values():
                     lbl.setVisible(checked)
                     cp1.setVisible(checked)
                     cp2.setVisible(checked)
                     btn.setVisible(checked)
-                    # Keep previous check state or not? 
-                    # If we hide, maybe we don't need to uncheck, just hide controls.
-                    # But if we don't uncheck, the plot might still show if logic depends on checkbox state?
-                    # The logic depends on toggled signal. If hidden, user can't toggle. 
-                    # We should probably ensure if command is OFF, visibility is forced OFF.
                     if not checked:
                         cp1.setChecked(False)
                         cp2.setChecked(False)
@@ -930,37 +959,30 @@ class AdaptiveGripperGUI(QMainWindow):
             
             return chk_cmd, sub_checks
 
-        # 1. Mag Filtered -> Mag Low Pass
         self.grp_mag, self.chk_mag = create_stream_group("Mag Low Pass", "mag_lowpass", {
             'mlx': "Mag X", 'mly': "Mag Y", 'mlz': "Mag Z", 'mag': "Magnitude"
         })
         
-        # 2. Mag High Pass
         self.grp_mag_hp, self.chk_mag_hp = create_stream_group("Mag High Pass", "mag_highpass", {
             'mhx': "HP X", 'mhy': "HP Y", 'mhz': "HP Z"
         })
         
-        # 3. Mag Raw
         self.grp_raw, self.chk_raw = create_stream_group("Mag Raw", "mag_raw", {
             'rmx': "Raw X", 'rmy': "Raw Y", 'rmz': "Raw Z"
         })
 
-        # 3. Current
         self.grp_cur, self.chk_cur = create_stream_group("Current", "current", {
             'cur': "Current (mA)"
         })
 
-        # 4. Slip
         self.grp_slip, self.chk_slip = create_stream_group("Slip Detection", "slip", {
             'slip': "Slip State", 's_ind': "Slip Indicator"
         })
 
-        # 5. Servo
         self.grp_srv, self.chk_srv = create_stream_group("Servo & Mode", "servo", {
             'srv': "Servo Pos", 'grp': "Grip State"
         })
         
-        # 6. FFT Mode
         self.chk_cmd_fft = QCheckBox("FFT Mode (Exclusive)")
         self.chk_cmd_fft.toggled.connect(lambda c: self.send_stream_command("fft", c))
         vbox.addWidget(self.chk_cmd_fft)
@@ -972,21 +994,23 @@ class AdaptiveGripperGUI(QMainWindow):
         if plot_idx == 1:
             if key in self.curves_p1:
                 self.curves_p1[key].setVisible(visible)
-            if key in self.replay_curves:
-                self.replay_curves[key].setVisible(visible)
+            # Replay P1
+            if hasattr(self, 'replay_curves_p1') and key in self.replay_curves_p1:
+                self.replay_curves_p1[key].setVisible(visible)
         elif plot_idx == 2:
             if key in self.curves_p2:
                 self.curves_p2[key].setVisible(visible)
+            # Replay P2
+            if hasattr(self, 'replay_curves_p2') and key in self.replay_curves_p2:
+                self.replay_curves_p2[key].setVisible(visible)
 
     def send_stream_command(self, key, enabled):
         if self.is_connected and self.serial_thread:
             cmd = json.dumps({key: enabled})
             self.serial_thread.send_command(cmd)
-            # Log sent command
             self.text_raw.append(f">> SENT: {cmd}")
 
     def setup_plotting(self):
-        # Create curves
         self.curves_p1 = {}
         self.curves_p2 = {}
         
@@ -1028,8 +1052,11 @@ class AdaptiveGripperGUI(QMainWindow):
             self.curves_p1[key].setPen(pen)
         if key in self.curves_p2:
             self.curves_p2[key].setPen(pen)
-        if key in self.replay_curves:
-            self.replay_curves[key].setPen(pen)
+        # Replay Curves
+        if hasattr(self, 'replay_curves_p1') and key in self.replay_curves_p1:
+            self.replay_curves_p1[key].setPen(pen)
+        if hasattr(self, 'replay_curves_p2') and key in self.replay_curves_p2:
+            self.replay_curves_p2[key].setPen(pen)
 
     def open_style_picker(self, key):
         if key not in self.curve_styles:
@@ -1044,7 +1071,7 @@ class AdaptiveGripperGUI(QMainWindow):
         self.spin_fft_max.setEnabled(not checked)
         if checked:
             self.plot_fft.enableAutoRange(axis='y')
-            self.plot_replay_fft.enableAutoRange(axis='y')
+            if hasattr(self, 'plot_replay_fft'): self.plot_replay_fft.enableAutoRange(axis='y')
         else:
             self.update_fft_range()
 
@@ -1052,10 +1079,11 @@ class AdaptiveGripperGUI(QMainWindow):
         if not self.chk_fft_auto.isChecked():
             v = self.spin_fft_max.value()
             self.plot_fft.setYRange(0, v)
-            self.plot_replay_fft.setYRange(0, v)
+            if hasattr(self, 'plot_replay_fft'): self.plot_replay_fft.setYRange(0, v)
 
     def apply_styles(self):
-        self.setStyleSheet(STYLESHEET)
+        # Handled by apply_theme
+        pass
 
     def refresh_ports(self):
         self.combo_ports.clear()
@@ -1067,16 +1095,15 @@ class AdaptiveGripperGUI(QMainWindow):
         self.is_simulating = checked
         if checked:
             if self.is_connected:
-                self.toggle_connection() # Disconnect serial if active
-            self.btn_connect.setEnabled(False)
+                self.toggle_connection() 
+            self.action_connect.setEnabled(False)
             self.combo_ports.setEnabled(False)
         else:
-            self.btn_connect.setEnabled(True)
+            self.action_connect.setEnabled(True)
             self.combo_ports.setEnabled(True)
 
     def toggle_connection(self):
         if not self.is_connected:
-            # Reset all telemetry plotting checkboxes before connecting
             self.grp_mag.setChecked(False)
             self.grp_mag_hp.setChecked(False)
             self.grp_raw.setChecked(False)
@@ -1095,12 +1122,11 @@ class AdaptiveGripperGUI(QMainWindow):
                 return
 
             self.serial_thread = SerialWorker(port, baud)
-            self.serial_thread.data_received.connect(self.handle_data_batch) # Connect to batch handler
-            self.serial_thread.raw_received.connect(self.handle_raw_batch) # Connect to batch handler
+            self.serial_thread.data_received.connect(self.handle_data_batch)
+            self.serial_thread.raw_received.connect(self.handle_raw_batch)
             self.serial_thread.error_occurred.connect(self.handle_error)
             self.serial_thread.start()
             
-            # Reset streams on connect (Disable all)
             reset_cmds = [
                 '{"fft": false}',
                 '{"mag_raw": false}',
@@ -1115,20 +1141,17 @@ class AdaptiveGripperGUI(QMainWindow):
                 self.serial_thread.send_command(cmd)
             
             self.is_connected = True
-            self.btn_connect.setText("Disconnect")
-            self.btn_connect.setStyleSheet(f"background-color: {COLOR_ACCENT_2}; color: white;")
-            self.radio_sim.setEnabled(False)
+            self.action_connect.setText("Disconnect")
+            self.chk_sim.setEnabled(False)
         else:
             if self.serial_thread:
                 self.serial_thread.stop()
                 self.serial_thread = None
             
             self.is_connected = False
-            self.btn_connect.setText("Connect Serial")
-            self.btn_connect.setStyleSheet("")
-            self.radio_sim.setEnabled(True)
+            self.action_connect.setText("Connect")
+            self.chk_sim.setEnabled(True)
             
-            # Toggle off all telemetry plotting
             self.grp_mag.setChecked(False)
             self.grp_mag_hp.setChecked(False)
             self.grp_raw.setChecked(False)
@@ -1140,18 +1163,15 @@ class AdaptiveGripperGUI(QMainWindow):
     def handle_error(self, msg):
         self.text_raw.append(f"!! ERROR: {msg}")
         if self.is_connected:
-            self.toggle_connection() # Reset UI
+            self.toggle_connection() 
 
     def handle_raw_batch(self, lines):
-        # Optimization: Only update raw text if the tab is visible
         if self.tabs.currentWidget() != self.tab_raw:
             return
 
-        # Only print the last 10 lines to avoid UI lag, or throttle
         for line in lines[-10:]:
             self.text_raw.append(line)
         
-        # Scroll to bottom less frequently or just once per batch
         sb = self.text_raw.verticalScrollBar()
         sb.setValue(sb.maximum())
 
@@ -1160,56 +1180,38 @@ class AdaptiveGripperGUI(QMainWindow):
             self.process_data_point(data)
 
     def process_data_point(self, data):
-        # Process incoming JSON
-        
-        # RECORD RAW PACKET IMMEDIATELY IF RECORDING
         if self.is_recording and hasattr(self, 'recording_file_handle'):
              try:
-                 # Save the exact packet received from serial (parsed dict)
-                 # We dump it as a single line JSON
                  self.recording_file_handle.write(json.dumps(data) + '\n')
              except Exception as e:
                  print(f"Rec write failed: {e}")
         
-        # Add reception timestamp (ms)
-        # Use PC time if 't' (device time) is missing or 0
         current_time_ms = time.time() * 1000.0
         data['recv_ts'] = current_time_ms
         
         if 't' not in data or data['t'] == 0:
             data['t'] = current_time_ms
 
-        # 1. FFT Data
         if data.get('type') == 'fft':
-            # Note: FFT data is already recorded above if recording is active
             fft_vals = data.get('data', [])
             if fft_vals:
                 self.process_external_fft(fft_vals)
             return
 
-        # 2. Time Series Data
         self.append_data(data)
 
     def process_external_fft(self, fft_vals):
-        # Update FFT plot with external data
-        # Calculate X axis (Frequency)
         sample_rate = self.spin_fft_rate.value()
-        # FFT size is typically (N/2) + 1 or N/2 depending on implementation
-        # User example has 64 bins. If N=128, rfft gives 65 bins (0..Nyquist).
-        
         num_bins = len(fft_vals)
         if num_bins < 2: 
             return
             
         freqs = np.linspace(0, sample_rate / 2, num_bins)
         
-        # Store for update loop (or update directly here if performant enough)
         self.fft_data['freqs'] = freqs
         self.fft_data['mags'] = fft_vals
         
-        # Find dominant freq
         try:
-            # Skip DC (index 0) if it's huge
             idx_peak = np.argmax(fft_vals[1:]) + 1
             dom_freq = freqs[idx_peak]
             self.lbl_freq.setText(f"Dominant Freq: {dom_freq:.1f} Hz")
@@ -1217,10 +1219,8 @@ class AdaptiveGripperGUI(QMainWindow):
             pass
 
     def append_data(self, data):
-        # Helper to safely append
         ts = data.get('t', 0)
         
-        # All keys we track
         keys = ['mlx', 'mly', 'mlz', 'mag', 
                 'mhx', 'mhy', 'mhz',
                 'rmx', 'rmy', 'rmz', 
@@ -1229,11 +1229,9 @@ class AdaptiveGripperGUI(QMainWindow):
                 
         filtered_data = {}
         
-        # Apply Despiking (3-point Median Filter)
         for key in keys:
             raw_val = data.get(key, 0.0)
             
-            # Update spike buffer
             if key in self.spike_buffer:
                 self.spike_buffer[key].append(raw_val)
                 if len(self.spike_buffer[key]) > 3:
@@ -1241,37 +1239,25 @@ class AdaptiveGripperGUI(QMainWindow):
             
             val_to_store = raw_val
             
-            # Only apply filter to analog-ish signals, not discrete states like 'slip' if not needed
-            # But 'slip' is 0/1, median filter works fine on it too (will debounce it).
             if self.chk_despike.isChecked() and key in self.spike_buffer:
                 buf = self.spike_buffer[key]
                 if len(buf) == 3:
-                    # Median of 3
-                    # Sort takes ~O(N log N), for N=3 it's tiny.
                     val_to_store = sorted(buf)[1]
             
             filtered_data[key] = val_to_store
 
-        # Update the data dict for plotting
         for key in keys:
             self.data[key].append(filtered_data[key])
             
         self.data['timestamp'].append(ts)
         self.data['recv_ts'].append(data.get('recv_ts', 0))
         
-        # Lazy Truncation: Only truncate if buffer exceeds limit by a chunk
         if len(self.data['timestamp']) > self.buffer_size + 1000:
-            # Keep exactly buffer_size
             cutoff = len(self.data['timestamp']) - self.buffer_size
             for k in self.data:
                 self.data[k] = self.data[k][cutoff:]
 
-        # Recording is handled in process_data_point for RAW data preservation
         if self.is_recording:
-            # Create a copy of data to save, injecting filtered values (Optional legacy buffer)
-            # We might not need this anymore if we stream to file, but it helps if we want to "Export" 
-            # what we just recorded later?
-            # Actually, let's just keep the legacy list for now in case the user clicks Export after Stop.
             record_packet = data.copy()
             for k, v in filtered_data.items():
                 record_packet[k] = v
@@ -1279,9 +1265,9 @@ class AdaptiveGripperGUI(QMainWindow):
 
     def toggle_recording(self):
         if not self.is_recording:
-            # Start Recording
             parent_dir = QFileDialog.getExistingDirectory(self, "Select Directory to Save Recording")
             if not parent_dir:
+                self.btn_record.setChecked(False)
                 return
                 
             import os
@@ -1291,29 +1277,26 @@ class AdaptiveGripperGUI(QMainWindow):
             save_dir = os.path.join(parent_dir, folder_name)
             os.makedirs(save_dir, exist_ok=True)
             
-            # We will save raw JSON packets (ndjson style)
             self.recording_file_path = os.path.join(save_dir, "raw_data.txt")
             
             try:
-                self.recording_file_handle = open(self.recording_file_path, 'w', buffering=1) # Line buffering
+                self.recording_file_handle = open(self.recording_file_path, 'w', buffering=1) 
                 
                 self.is_recording = True
-                self.recording_data = [] # Legacy buffer, optional
-                self.recording_fft = []  # Legacy buffer
+                self.recording_data = [] 
+                self.recording_fft = []  
                 
                 self.btn_record.setText("Stop Recording")
-                self.btn_record.setStyleSheet(f"background-color: {COLOR_ACCENT_2}; color: white;")
                 self.text_raw.append(f">> RECORDING STARTED: {folder_name}/raw_data.txt")
                 
             except Exception as e:
                 self.text_raw.append(f"!! RECORDING INIT FAILED: {e}")
                 if hasattr(self, 'recording_file_handle'): self.recording_file_handle.close()
+                self.btn_record.setChecked(False)
 
         else:
-            # Stop Recording
             self.is_recording = False
-            self.btn_record.setText("Start Recording")
-            self.btn_record.setStyleSheet(f"background-color: {COLOR_PANEL}; color: {COLOR_ACCENT_3};")
+            self.btn_record.setText("Record")
             
             if hasattr(self, 'recording_file_handle'):
                 self.recording_file_handle.close()
@@ -1322,23 +1305,18 @@ class AdaptiveGripperGUI(QMainWindow):
             self.text_raw.append(f">> RECORDING STOPPED.")
 
     def update_loop(self):
-        # 1. Generate Sim Data if needed
         if self.is_simulating:
-            # Generate a few samples per frame to simulate speed
             for _ in range(3): 
                 d = self.sim_generator.next_sample()
                 self.append_data(d)
                 
-            # Simulate FFT update occasionally
             if np.random.random() < 0.1:
-                # Mock FFT
                 freqs = np.linspace(0, 50, 64)
                 mags = np.random.random(64) * 10
-                mags[10] = 50 # Peak at ~8Hz
+                mags[10] = 50 
                 self.fft_data['freqs'] = freqs
                 self.fft_data['mags'] = mags
 
-        # 2. Update Time Plots
         if len(self.data['timestamp']) > 1:
             
             def update_plot_curves(curves, settings):
@@ -1347,7 +1325,6 @@ class AdaptiveGripperGUI(QMainWindow):
                 
                 for key, curve in curves.items():
                     if key in self.data and curve.isVisible():
-                        # Slice data to the window size
                         y_data = self.data[key][-window_size:]
                         curve.setData(y_data)
                         if settings.chk_center.isChecked():
@@ -1360,20 +1337,12 @@ class AdaptiveGripperGUI(QMainWindow):
             if self.plot_time_2.isVisible():
                 update_plot_curves(self.curves_p2, self.settings_p2)
                     
-        # 3. Update FFT Plot
-        # If we have external FFT data, use it.
-        # Otherwise, if in SIM mode or default, we might calculate it (but prompt said take from controller)
         if len(self.fft_data['freqs']) > 0 and len(self.fft_data['mags']) > 0 and self.plot_fft.isVisible():
              self.curve_fft.setData(self.fft_data['freqs'], self.fft_data['mags'])
         else:
-            # Fallback local FFT calculation if no external data and we have time series? 
-            # User instructions imply we should rely on controller for FFT when connected.
-            # But let's keep local FFT for simulation or if user wants it (but we don't have a toggle for local FFT anymore).
-            # For now, if no external data is coming, the plot stays empty.
             pass
 
     def mark_event(self, label):
-        # Record the current timestamp/index and label
         if not self.data['timestamp']:
             return
         
@@ -1384,10 +1353,8 @@ class AdaptiveGripperGUI(QMainWindow):
             'data_index': len(self.data['timestamp'])
         })
         print(f"Event Marked: {label} at T={t}")
-        # Optional: Add a visual marker on the plot (not implemented here for brevity)
 
     def export_data(self):
-        # Ask for directory to create the recording folder in
         parent_dir = QFileDialog.getExistingDirectory(self, "Select Directory to Save Recording")
         if not parent_dir:
             return
@@ -1396,45 +1363,37 @@ class AdaptiveGripperGUI(QMainWindow):
             import os
             from datetime import datetime
             
-            # Create folder: recording_YYYY_MM_DD_HH_MM_SS
             timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
             folder_name = f"recording_{timestamp}"
             save_dir = os.path.join(parent_dir, folder_name)
             os.makedirs(save_dir, exist_ok=True)
             
-            # 1. Export Main Time Series Data -> signals.csv
             signals_path = os.path.join(save_dir, "signals.csv")
             
             with open(signals_path, 'w', newline='') as f:
                 writer = csv.writer(f)
-                # Header
                 keys = ['timestamp', 'recv_ts', 'mlx', 'mly', 'mlz', 'mag', 'mhx', 'mhy', 'mhz', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']
                 writer.writerow(keys + ['label'])
                 
-                # Decide source: Recording Data or Live Buffer
                 source_data = []
                 
                 if self.recording_data:
-                    # Use the recording buffer
                     for row_data in self.recording_data:
                         row = []
-                        # Map keys
                         t = row_data.get('t', 0)
                         row.append(t)
                         row.append(row_data.get('recv_ts', 0))
-                        for k in keys[2:]: # skip timestamps
+                        for k in keys[2:]: 
                             row.append(row_data.get(k, 0))
                         
-                        # Check for label
                         lbl = ""
                         for ev in self.recorded_events:
-                            if abs(ev['timestamp'] - t) < 1.0: # 1ms tolerance
+                            if abs(ev['timestamp'] - t) < 1.0: 
                                 lbl = ev['label']
                                 break
                         row.append(lbl)
                         source_data.append(row)
                 else:
-                     # Use circular buffer
                     events_map = {e['timestamp']: e['label'] for e in self.recorded_events}
                     
                     for i in range(len(self.data['timestamp'])):
@@ -1452,13 +1411,11 @@ class AdaptiveGripperGUI(QMainWindow):
             
             print(f"Exported signals to {signals_path}")
 
-            # 2. Export FFT Data -> FFT.csv
             if self.recording_fft:
                 fft_path = os.path.join(save_dir, "FFT.csv")
                     
                 with open(fft_path, 'w', newline='') as f:
                     writer = csv.writer(f)
-                    # Header
                     num_bins = len(self.recording_fft[0].get('data', []))
                     header = ['timestamp', 'recv_ts'] + [f'bin_{i}' for i in range(num_bins)]
                     writer.writerow(header)
@@ -1472,7 +1429,6 @@ class AdaptiveGripperGUI(QMainWindow):
                         
                 print(f"Exported FFT data to {fft_path}")
             
-            # Show confirmation
             self.text_raw.append(f">> SAVED RECORDING: {folder_name}")
 
         except Exception as e:
@@ -1500,19 +1456,13 @@ class AdaptiveGripperGUI(QMainWindow):
                     try:
                         item = json.loads(line)
                         
-                        # Check type
                         if item.get('type') == 'fft':
-                            # FFT Packet
-                            # Assign to current time step
                             item['t'] = float(t_counter)
                             self.replay_fft_data.append(item)
                         else:
-                            # Signal Packet
-                            # Increment time (1 second/unit per sample as requested)
                             t_counter += 1
                             item['t'] = float(t_counter)
                             
-                            # Ensure all expected keys exist (fill 0 if missing)
                             for k in ['mlx', 'mly', 'mlz', 'mag', 'mhx', 'mhy', 'mhz', 'rmx', 'rmy', 'rmz', 'cur', 'slip', 's_ind', 'srv', 'grp']:
                                 if k not in item: item[k] = 0.0
                                 
@@ -1523,9 +1473,6 @@ class AdaptiveGripperGUI(QMainWindow):
                 print(f"Loaded {len(self.replay_data)} samples and {len(self.replay_fft_data)} FFT frames from JSON.")
                 
             else:
-                # Legacy CSV Load
-                # ... (Keep existing CSV logic roughly or simplify? User said 'instead of CSV')
-                # But let's keep it for 'signals.csv' if they select it.
                 temp_signals = []
                 with open(path, 'r') as f:
                     reader = csv.DictReader(f)
@@ -1537,34 +1484,20 @@ class AdaptiveGripperGUI(QMainWindow):
                                 try: item[k] = float(v)
                                 except: item[k] = 0.0
                         
-                        # Legacy map
                         if 'mx' in row: item['mlx'] = row['mx']
                         if 'my' in row: item['mly'] = row['my']
                         if 'mz' in row: item['mlz'] = row['mz']
                         
                         temp_signals.append(item)
                 
-                # Synthesize time for CSV too to be consistent with "no timestamps" rule?
-                # Or keep using timestamps for CSV?
-                # User said "playback works that it reads THAT" (referring to raw file).
-                # I'll apply the simple counter logic to CSV too, to fix the zig-zag even for old files if loaded.
                 t_counter = 0
                 for item in temp_signals:
                     t_counter += 1
                     item['t'] = float(t_counter)
                     self.replay_data.append(item)
                 
-                # Try load FFT
-                # ... (simplified FFT load)
-
-            # Finalize
             if self.replay_data:
-                # Sort (already sorted by read order)
-                # Configure view
                 self.configure_view_from_row(self.replay_data[0])
-                
-                # Normalize time (start at 0 or 1?)
-                # t_counter starts at 1.
                 
                 self.slider_replay.setRange(0, len(self.replay_data) - 1)
                 self.slider_replay.setValue(0)
@@ -1578,7 +1511,6 @@ class AdaptiveGripperGUI(QMainWindow):
             traceback.print_exc()
 
     def configure_view_from_row(self, row):
-        # Helper to enable checkboxes based on data presence (non-zero)
         def check_group(grp_chk, sub_chks, keys):
             has_data = False
             for k in keys:
@@ -1589,24 +1521,16 @@ class AdaptiveGripperGUI(QMainWindow):
             if has_data:
                 grp_chk.setChecked(True)
                 for k in keys:
-                    # If the specific key has data, check it
                     if k in sub_chks and abs(row.get(k, 0)) > 0.000001:
-                         # sub_chks[k] is (lbl, chk_p1, chk_p2, btn_style)
                          sub_chks[k][1].setChecked(True)
             else:
                 grp_chk.setChecked(False)
         
-        # Mag Filtered (Low Pass)
         check_group(self.grp_mag, self.chk_mag, ['mlx', 'mly', 'mlz', 'mag'])
-        # Mag High Pass
         check_group(self.grp_mag_hp, self.chk_mag_hp, ['mhx', 'mhy', 'mhz'])
-        # Mag Raw
         check_group(self.grp_raw, self.chk_raw, ['rmx', 'rmy', 'rmz'])
-        # Current
         check_group(self.grp_cur, self.chk_cur, ['cur'])
-        # Slip
         check_group(self.grp_slip, self.chk_slip, ['slip', 's_ind'])
-        # Servo
         check_group(self.grp_srv, self.chk_srv, ['srv', 'grp'])
 
     def toggle_replay(self):
@@ -1616,7 +1540,7 @@ class AdaptiveGripperGUI(QMainWindow):
         else:
             if not self.replay_data:
                 return
-            self.replay_timer.start(33) # 30ms playback
+            self.replay_timer.start(33) 
             self.btn_play_replay.setText("Pause")
 
     def on_replay_slider_move(self, val):
@@ -1629,13 +1553,12 @@ class AdaptiveGripperGUI(QMainWindow):
             self.slider_replay.setValue(self.replay_index)
             self.update_replay_plot_snapshot()
         else:
-            self.toggle_replay() # Stop at end
+            self.toggle_replay() 
 
     def update_replay_plot_snapshot(self):
         if not self.replay_data:
             return
             
-        # Show a window of data
         window = self.settings_replay.spin_window.value()
         start_idx = max(0, self.replay_index - window)
         end_idx = self.replay_index + 1
@@ -1646,45 +1569,31 @@ class AdaptiveGripperGUI(QMainWindow):
         
         visible_values = []
 
-        # Helper to update if visible
-        for key, curve in self.replay_curves.items():
-            if curve.isVisible():
-                y = [d.get(key, 0) for d in subset]
-                curve.setData(t, y)
-                if self.settings_replay.chk_center.isChecked():
-                    visible_values.extend(y)
-        
-        # Handle Center DC Scaling for Replay
+        def update_replay_curves(curves, settings):
+            for key, curve in curves.items():
+                if curve.isVisible():
+                    y = [d.get(key, 0) for d in subset]
+                    curve.setData(t, y)
+                    if settings.chk_center.isChecked():
+                        visible_values.extend(y)
+
+        update_replay_curves(self.replay_curves_p1, self.settings_replay) # Replay Settings used for P1
+        if self.settings_replay_2.isVisible():
+             update_replay_curves(self.replay_curves_p2, self.settings_replay_2)
+
         self.settings_replay.apply_dc_center(visible_values)
         
-        # Update FFT if available
         cur_t = self.replay_data[self.replay_index].get('t', 0)
         
         if self.replay_fft_data:
-            # Find the most recent FFT frame <= cur_t
-            # Since data is sorted, we can search
-            # Simple linear search backward from last known index or just linear scan if small enough
-            # For robustness, let's find the frame with closest timestamp
-            
-            # Efficient search:
-            import bisect
-            # Create a list of timestamps
-            # (Optimization: store this list separately to avoid rebuilding)
-            # For now, simple iteration since replay loop is 33ms
-            
             best_frame = None
             for frame in self.replay_fft_data:
                 if frame['t'] > cur_t:
                     break
                 best_frame = frame
                 
-            # Or better: keep track of an index? 
-            # If we scrub backwards, index approach needs reset.
-            # Let's do the simple loop, it's fast enough for <10k frames
-            
             if best_frame:
                 fft_vals = best_frame['data']
-                # X axis
                 sample_rate = self.spin_fft_rate.value()
                 num_bins = len(fft_vals)
                 freqs = np.linspace(0, sample_rate / 2, num_bins)
@@ -1692,12 +1601,12 @@ class AdaptiveGripperGUI(QMainWindow):
             else:
                 self.curve_replay_fft.clear()
         
-        # Update label
         self.lbl_replay_time.setText(f"{cur_t:.2f} ms")
         
-        # Force auto-range on X for replay to follow the data
         if t:
             self.plot_replay.setXRange(min(t), max(t) + 0.1, padding=0)
+            if hasattr(self, 'plot_replay_2') and self.plot_replay_2.isVisible():
+                self.plot_replay_2.setXRange(min(t), max(t) + 0.1, padding=0)
 
     def import_data(self):
         path, _ = QFileDialog.getOpenFileName(self, "Import Data", "", "CSV Files (*.csv);;JSON Files (*.json)")
@@ -1705,7 +1614,6 @@ class AdaptiveGripperGUI(QMainWindow):
             return
 
         try:
-            # Clear current data
             for k in self.data:
                 self.data[k] = []
             self.recorded_events = []
@@ -1714,12 +1622,10 @@ class AdaptiveGripperGUI(QMainWindow):
                 with open(path, 'r') as f:
                     reader = csv.DictReader(f)
                     for row in reader:
-                        # Parse row
                         try:
                             t = float(row.get('timestamp', 0))
                             lbl = row.get('label', '')
                             
-                            # Handle legacy keys if present
                             row_mapped = row.copy()
                             if 'mx' in row: row_mapped['mlx'] = row['mx']
                             if 'my' in row: row_mapped['mly'] = row['my']
@@ -1736,19 +1642,15 @@ class AdaptiveGripperGUI(QMainWindow):
                             continue
                             
             elif path.endswith('.json'):
-                # Assuming JSON is a list of objects or a struct
                 with open(path, 'r') as f:
                     content = json.load(f)
-                    # Check format
                     if isinstance(content, list):
                         for item in content:
                             self.append_data(item)
                     elif isinstance(content, dict) and 'data' in content:
-                         # Handle specific export formats if defined
                          pass
                          
             print(f"Imported from {path}")
-            # Refresh plots immediately
             self.update_loop()
             
         except Exception as e:
@@ -1756,9 +1658,8 @@ class AdaptiveGripperGUI(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setStyle("Fusion") # Force Fusion style for better dark theme support
+    app.setStyle("Fusion") 
     
-    # Set dark palette for standard Qt widgets
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(COLOR_BG))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(COLOR_TEXT))

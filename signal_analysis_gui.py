@@ -113,7 +113,9 @@ class SerialWorker(QThread):
     def run(self):
         try:
             # timeout=0 for non-blocking read
-            self.ser = serial.Serial(self.port, self.baud, timeout=0)
+            # dsrdtr=False help with flow control
+            # Removed explicit dtr/rts setting as it causes ESP32 reset on some boards
+            self.ser = serial.Serial(self.port, self.baud, timeout=0, dsrdtr=False)
             
             while self.running and self.ser.is_open:
                 # Send pending commands

@@ -6,6 +6,26 @@ namespace DebugTask {
   
   DebugConfig config;
 
+  // Custom Print class to calculate checksum on the fly
+  class ChecksumSerial : public Print {
+  public:
+      uint8_t checksum = 0;
+      
+      size_t write(uint8_t c) override {
+          checksum ^= c;
+          return Serial.write(c);
+      }
+      
+      size_t write(const uint8_t *buffer, size_t size) override {
+          for (size_t i = 0; i < size; i++) {
+              checksum ^= buffer[i];
+          }
+          return Serial.write(buffer, size);
+      }
+      
+      void reset() { checksum = 0; }
+  };
+
   void init() {
     // Initialize mutexes
     mutexSlipData = xSemaphoreCreateMutex();
@@ -136,6 +156,7 @@ namespace DebugTask {
     const TickType_t xFrequency = pdMS_TO_TICKS(DEBUG_PRINT_INTERVAL_MS);
     
     DebugData localData;
+    ChecksumSerial chkSerial;
     
     for (;;) {
       // Check for commands
@@ -157,13 +178,16 @@ namespace DebugTask {
            if (mutexFFTData != NULL && xSemaphoreTake(mutexFFTData, pdMS_TO_TICKS(50)) == pdTRUE) {
               
               // Helper to print array as JSON: "fft_x":[v1,v2,...]
-              
-              Serial.print("{\"type\":\"fft\",\"data\":[");
+              chkSerial.reset();
+              chkSerial.print("{\"type\":\"fft\",\"data\":[");
               for(int i=0; i<FFT_SAMPLES/2; i++) { // Only first half is useful usually
-                 Serial.print(fftX_high_pass.vReal[i], 2); 
-                 if(i < (FFT_SAMPLES/2)-1) Serial.print(",");
+                 chkSerial.print(fftX_high_pass.vReal[i], 2); 
+                 if(i < (FFT_SAMPLES/2)-1) chkSerial.print(",");
               }
-              Serial.println("]}");
+              chkSerial.print("]}");
+              
+              // Print checksum: |XX
+              Serial.printf("|%02X\r\n", chkSerial.checksum);
               
               // Reset flag in FFT processor
               fftX_high_pass.FFT_complete = false;
@@ -193,48 +217,51 @@ namespace DebugTask {
 
         // Build JSON String
         // Using manual string building for speed and no dynamic allocation overhead
-        Serial.print("{");
+        chkSerial.reset();
+        chkSerial.print("{");
         bool first = true;
 
         if (config.stream_mag_filtered) {
-           if(!first) Serial.print(",");
-           Serial.printf("\"mx\":%.2f,\"my\":%.2f,\"mz\":%.2f,\"mag\":%.2f", 
+           if(!first) chkSerial.print(",");
+           chkSerial.printf("\"mx\":%.2f,\"my\":%.2f,\"mz\":%.2f,\"mag\":%.2f", 
               localData.mag_x_filtered, localData.mag_y_filtered, localData.mag_z_filtered, localData.mag_magnitude);
            first = false;
         }
 
         if (config.stream_mag_raw) {
-           if(!first) Serial.print(",");
-           Serial.printf("\"rmx\":%.2f,\"rmy\":%.2f,\"rmz\":%.2f", 
+           if(!first) chkSerial.print(",");
+           chkSerial.printf("\"rmx\":%.2f,\"rmy\":%.2f,\"rmz\":%.2f", 
               localData.mag_x, localData.mag_y, localData.mag_z);
            first = false;
         }
 
         if (config.stream_current) {
-           if(!first) Serial.print(",");
-           Serial.printf("\"cur\":%.2f", localData.current_mA);
+           if(!first) chkSerial.print(",");
+           chkSerial.printf("\"cur\":%.2f", localData.current_mA);
            first = false;
         }
         
         if (config.stream_slip) {
-           if(!first) Serial.print(",");
-           Serial.printf("\"slip\":%d,\"s_ind\":%.2f", localData.slip_flag ? 1 : 0, localData.slip_indicator);
+           if(!first) chkSerial.print(",");
+           chkSerial.printf("\"slip\":%d,\"s_ind\":%.2f", localData.slip_flag ? 1 : 0, localData.slip_indicator);
            first = false;
         }
 
         if (config.stream_servo) {
-           if(!first) Serial.print(",");
-           Serial.printf("\"srv\":%d,\"grp\":%d", localData.servo_position, localData.gripping_mode);
+           if(!first) chkSerial.print(",");
+           chkSerial.printf("\"srv\":%d,\"grp\":%d", localData.servo_position, localData.gripping_mode);
            first = false;
         }
 
         if (config.stream_system) {
-           if(!first) Serial.print(",");
-           Serial.printf("\"t\":%lu", localData.scan_time_us);
+           if(!first) chkSerial.print(",");
+           chkSerial.printf("\"t\":%lu", localData.scan_time_us);
            first = false;
         }
 
-        Serial.println("}");
+        chkSerial.print("}");
+        // Print checksum: |XX
+        Serial.printf("|%02X\r\n", chkSerial.checksum);
       }
     }
   }

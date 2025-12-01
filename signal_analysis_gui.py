@@ -124,9 +124,37 @@ class SerialWorker(QThread):
                     line = self.ser.readline().decode('utf-8', errors='ignore').strip()
                     if line:
                         self.raw_received.emit(line)
-                        if line.startswith('{') and line.endswith('}'):
+                        
+                        payload_str = line
+                        valid_payload = False
+                        
+                        # Checksum verification (Format: {json}|HEX)
+                        if '|' in line:
+                            parts = line.rsplit('|', 1)
+                            if len(parts) == 2:
+                                content, chk_hex = parts
+                                try:
+                                    recv_chk = int(chk_hex, 16)
+                                    # Calculate XOR checksum of the content part
+                                    calc_chk = 0
+                                    for char in content:
+                                        calc_chk ^= ord(char)
+                                    
+                                    if calc_chk == recv_chk:
+                                        payload_str = content
+                                        valid_payload = True
+                                    else:
+                                        # Optional: Log checksum error
+                                        pass
+                                except ValueError:
+                                    pass
+                        else:
+                            # No checksum (legacy or simple ACK), allow if looks like JSON
+                            valid_payload = True
+
+                        if valid_payload and payload_str.startswith('{') and payload_str.endswith('}'):
                             try:
-                                data = json.loads(line)
+                                data = json.loads(payload_str)
                                 self.data_received.emit(data)
                             except json.JSONDecodeError:
                                 pass

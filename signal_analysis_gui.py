@@ -984,7 +984,12 @@ class AdaptiveGripperGUI(QMainWindow):
         })
         
         self.chk_cmd_fft = QCheckBox("FFT Mode (Exclusive)")
-        self.chk_cmd_fft.toggled.connect(lambda c: self.send_stream_command("fft", c))
+        def toggle_fft_mode(checked):
+            self.send_stream_command("fft", checked)
+            # Automatically toggle the view
+            self.action_show_fft.setChecked(checked)
+            
+        self.chk_cmd_fft.toggled.connect(toggle_fft_mode)
         vbox.addWidget(self.chk_cmd_fft)
 
         grp.setLayout(vbox)

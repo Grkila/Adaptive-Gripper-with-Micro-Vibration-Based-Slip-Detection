@@ -27,7 +27,6 @@ namespace MagneticSensor {
     }
     
     // Initialize sensor structure
-    // Note: tlx493d_init doesn't use I2C, it just sets up the struct
     if (!tlx493d_init(&sensor, TLx493D_A1B6_e)) {
       Serial.println("[SENSOR] ERROR: tlx493d_init failed!");
       return false;

@@ -1033,6 +1033,12 @@ class AdaptiveGripperGUI(QMainWindow):
         h_hist.addWidget(self.spin_hist_len)
         v_fft_cfg.addLayout(h_hist)
 
+        # Color Bar Toggle
+        self.chk_show_lut = QCheckBox("Show Color Bar")
+        self.chk_show_lut.setChecked(True)
+        self.chk_show_lut.toggled.connect(self.toggle_lut)
+        v_fft_cfg.addWidget(self.chk_show_lut)
+
         grp_fft_cfg.setLayout(v_fft_cfg)
         sidebar_layout.addWidget(grp_fft_cfg)
 
@@ -1122,17 +1128,35 @@ class AdaptiveGripperGUI(QMainWindow):
         
         self.viz_splitter.addWidget(self.plot_fft)
 
-        # Spectrogram Plot
-        self.plot_spectrogram = pg.PlotWidget(title="FFT History (Spectrogram)")
+        # Spectrogram Plot Container (GraphicsLayoutWidget for Plot + Legend)
+        self.spectrogram_widget = pg.GraphicsLayoutWidget()
+        # We will apply theme background later, but init with default
+        self.spectrogram_widget.setBackground(THEMES["Dark"]['chart_bg'])
+        
+        # Plot Item (row 0, col 0)
+        self.plot_spectrogram = self.spectrogram_widget.addPlot(title="FFT History (Spectrogram)", row=0, col=0)
         self.plot_spectrogram.showGrid(x=False, y=True, alpha=0.3)
         self.plot_spectrogram.setLabel('left', "Frequency", units='Hz')
         self.plot_spectrogram.setLabel('bottom', "Time", units='frames')
         
+        # Image Item
         self.img_spectrogram = pg.ImageItem()
         self.img_spectrogram.setLookupTable(self.spectrogram_lut)
         self.plot_spectrogram.addItem(self.img_spectrogram)
         
-        self.viz_splitter.addWidget(self.plot_spectrogram)
+        # Histogram/Legend (row 0, col 1)
+        self.hist_lut = pg.HistogramLUTItem()
+        self.hist_lut.setImageItem(self.img_spectrogram)
+        self.hist_lut.axis.setLabel('Magnitude')
+        
+        # Hide the blue histogram curve to avoid confusion (it shows magnitude distribution, not frequency)
+        # The user likely just wants a color legend (gradient bar)
+        self.hist_lut.plot.setVisible(False) 
+        self.hist_lut.gradient.show() 
+        
+        self.spectrogram_widget.addItem(self.hist_lut, row=0, col=1)
+        
+        self.viz_splitter.addWidget(self.spectrogram_widget)
         
         layout_viz.addWidget(self.viz_splitter)
         
@@ -1292,20 +1316,36 @@ class AdaptiveGripperGUI(QMainWindow):
         # Reset buffer to force resize
         self.spectrogram_buffer = None
 
+    def toggle_lut(self, checked):
+        if not hasattr(self, 'spectrogram_widget') or not hasattr(self, 'hist_lut'):
+            return
+            
+        # Check if hist_lut is currently in the layout
+        # items() returns a list of (item, row, col, rowspan, colspan)? No, just items?
+        # GraphicsLayoutWidget layout items are managed by the layout.
+        
+        # Easiest way is to remove and re-add
+        if checked:
+            # Only add if not already there (checking parent)
+            if self.hist_lut.parentLayout() is None:
+                self.spectrogram_widget.addItem(self.hist_lut, row=0, col=1)
+        else:
+            self.spectrogram_widget.removeItem(self.hist_lut)
+
     def update_layout_visibility(self):
         show_fft = self.action_show_fft.isChecked()
         show_p2 = self.chk_show_p2.isChecked()
         
         if show_fft:
             self.plot_fft.setVisible(True)
-            self.plot_spectrogram.setVisible(True)
+            self.spectrogram_widget.setVisible(True)
             self.plot_time_1.setVisible(False)
             self.plot_time_2.setVisible(False)
             # Split FFT view
             self.viz_splitter.setSizes([0, 0, 1000, 1000])
         else:
             self.plot_fft.setVisible(False)
-            self.plot_spectrogram.setVisible(False)
+            self.spectrogram_widget.setVisible(False)
             self.plot_time_1.setVisible(True)
             self.plot_time_2.setVisible(show_p2)
             
@@ -1909,6 +1949,30 @@ class AdaptiveGripperGUI(QMainWindow):
                 tr.scale(1, freq_resolution)
                 self.img_spectrogram.setTransform(tr)
                 self.img_spectrogram.setPos(0, 0)
+                
+                # Update Spectrogram Y-Axis Ticks (Frequency)
+                # Show more ticks for clarity as requested
+                
+                # Major ticks with labels
+                y_axis = self.plot_spectrogram.getAxis('left')
+                
+                if len(freqs) > 0:
+                    # Determine step size for labels to not clutter but show enough
+                    # Aim for ~10-15 labels max
+                    step_idx = max(1, num_bins // 15)
+                    
+                    major_ticks = []
+                    for i in range(0, num_bins, step_idx):
+                        f = freqs[i]
+                        major_ticks.append((f, f"{f:.1f}"))
+                    
+                    # Ensure last frequency is included
+                    if num_bins > 0:
+                        f_last = freqs[-1]
+                        if len(major_ticks) == 0 or abs(major_ticks[-1][0] - f_last) > freq_resolution:
+                             major_ticks.append((f_last, f"{f_last:.1f}"))
+                        
+                    y_axis.setTicks([major_ticks])
 
         except Exception as e:
             print(f"FFT peak detection error: {e}")

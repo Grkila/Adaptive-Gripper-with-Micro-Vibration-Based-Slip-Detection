@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QDialog, QFormLayout, QDialogButtonBox, QColorDialog, QGridLayout,
                              QMenuBar, QMenu, QToolBar, QLineEdit, QListWidget, QSizePolicy)
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QThread, QObject, QPoint, QRect
-from PyQt6.QtGui import QColor, QPalette, QFont, QAction, QPainter, QBrush, QPen, QRadialGradient, QLinearGradient, QConicalGradient
+from PyQt6.QtGui import QColor, QPalette, QFont, QAction, QPainter, QBrush, QPen, QRadialGradient, QLinearGradient, QConicalGradient, QTransform
 import pyqtgraph as pg
 
 # ==========================================
@@ -801,6 +801,23 @@ class AdaptiveGripperGUI(QMainWindow):
         self.spike_buffer = {k: [] for k in self.data.keys() if k != 'timestamp'}
         
         self.fft_data = {'freqs': [], 'mags': [], 'freq_resolution': 1.0, 'fft_size': 0}
+        
+        # Spectrogram / History
+        self.spectrogram_history_len = 150
+        self.spectrogram_buffer = None
+        
+        # Create a custom colormap (Inferno-like: Black -> Purple -> Orange -> Yellow)
+        pos = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+        color = np.array([
+            [0, 0, 0, 255],       # Black
+            [30, 0, 70, 255],     # Dark Purple
+            [180, 30, 100, 255],  # Red/Purple
+            [255, 140, 0, 255],   # Orange
+            [255, 255, 150, 255]  # Bright Yellow
+        ], dtype=np.ubyte)
+        cmap = pg.ColorMap(pos, color)
+        self.spectrogram_lut = cmap.getLookupTable(0.0, 1.0, 256)
+
         self.recorded_events = []
         self.current_segment_start = None
 
@@ -881,7 +898,7 @@ class AdaptiveGripperGUI(QMainWindow):
         pg.setConfigOption('background', theme['chart_bg'])
         pg.setConfigOption('foreground', theme['text'])
         
-        plots = [self.plot_time_1, self.plot_time_2, self.plot_fft]
+        plots = [self.plot_time_1, self.plot_time_2, self.plot_fft, self.plot_spectrogram]
         if hasattr(self, 'plot_replay_1'): plots.extend([self.plot_replay_1, self.plot_replay_2, self.plot_replay_fft])
         
         for p in plots:
@@ -1005,6 +1022,17 @@ class AdaptiveGripperGUI(QMainWindow):
         h_fft_scale.addWidget(self.spin_fft_max)
         
         v_fft_cfg.addLayout(h_fft_scale)
+
+        h_hist = QHBoxLayout()
+        h_hist.addWidget(QLabel("History Len:"))
+        self.spin_hist_len = QSpinBox()
+        self.spin_hist_len.setRange(50, 2000)
+        self.spin_hist_len.setValue(self.spectrogram_history_len)
+        self.spin_hist_len.setSingleStep(50)
+        self.spin_hist_len.valueChanged.connect(self.update_spectrogram_length)
+        h_hist.addWidget(self.spin_hist_len)
+        v_fft_cfg.addLayout(h_hist)
+
         grp_fft_cfg.setLayout(v_fft_cfg)
         sidebar_layout.addWidget(grp_fft_cfg)
 
@@ -1093,6 +1121,18 @@ class AdaptiveGripperGUI(QMainWindow):
         self.plot_fft.addItem(self.fft_ref_line_30hz)
         
         self.viz_splitter.addWidget(self.plot_fft)
+
+        # Spectrogram Plot
+        self.plot_spectrogram = pg.PlotWidget(title="FFT History (Spectrogram)")
+        self.plot_spectrogram.showGrid(x=False, y=True, alpha=0.3)
+        self.plot_spectrogram.setLabel('left', "Frequency", units='Hz')
+        self.plot_spectrogram.setLabel('bottom', "Time", units='frames')
+        
+        self.img_spectrogram = pg.ImageItem()
+        self.img_spectrogram.setLookupTable(self.spectrogram_lut)
+        self.plot_spectrogram.addItem(self.img_spectrogram)
+        
+        self.viz_splitter.addWidget(self.plot_spectrogram)
         
         layout_viz.addWidget(self.viz_splitter)
         
@@ -1247,24 +1287,33 @@ class AdaptiveGripperGUI(QMainWindow):
         self.lamp_panel.update_lamps(visible_thresholds, active_ids)
 
 
+    def update_spectrogram_length(self, val):
+        self.spectrogram_history_len = val
+        # Reset buffer to force resize
+        self.spectrogram_buffer = None
+
     def update_layout_visibility(self):
         show_fft = self.action_show_fft.isChecked()
         show_p2 = self.chk_show_p2.isChecked()
         
         if show_fft:
             self.plot_fft.setVisible(True)
+            self.plot_spectrogram.setVisible(True)
             self.plot_time_1.setVisible(False)
             self.plot_time_2.setVisible(False)
+            # Split FFT view
+            self.viz_splitter.setSizes([0, 0, 1000, 1000])
         else:
             self.plot_fft.setVisible(False)
+            self.plot_spectrogram.setVisible(False)
             self.plot_time_1.setVisible(True)
             self.plot_time_2.setVisible(show_p2)
             
             # Ensure equal splitting when P2 is shown
             if show_p2:
-                self.viz_splitter.setSizes([1000, 1000, 0])
+                self.viz_splitter.setSizes([1000, 1000, 0, 0])
             else:
-                self.viz_splitter.setSizes([1000, 0, 0])
+                self.viz_splitter.setSizes([1000, 0, 0, 0])
         
         # Update threshold lines when plot visibility changes
         self.update_threshold_lines()
@@ -1820,6 +1869,47 @@ class AdaptiveGripperGUI(QMainWindow):
                     f"Bins: {num_bins} | FFT Size: {fft_size} | Res: {freq_resolution:.2f} Hz\n"
                     f"{first_bins_info}"
                 )
+                
+                # --- Update Spectrogram ---
+                # Init/Resize buffer if needed
+                if self.spectrogram_buffer is None or self.spectrogram_buffer.shape[1] != num_bins:
+                    self.spectrogram_buffer = np.zeros((self.spectrogram_history_len, num_bins))
+                elif self.spectrogram_buffer.shape[0] != self.spectrogram_history_len:
+                    # Resize history length (preserve old data if possible)
+                    old_len = self.spectrogram_buffer.shape[0]
+                    new_buf = np.zeros((self.spectrogram_history_len, num_bins))
+                    if old_len < self.spectrogram_history_len:
+                        new_buf[-old_len:] = self.spectrogram_buffer
+                    else:
+                        new_buf = self.spectrogram_buffer[-self.spectrogram_history_len:]
+                    self.spectrogram_buffer = new_buf
+
+                # Roll and append (scrolling waterfall)
+                self.spectrogram_buffer[:-1] = self.spectrogram_buffer[1:]
+                self.spectrogram_buffer[-1] = mags
+                
+                # Auto-scale levels
+                if self.chk_fft_auto.isChecked():
+                    max_val = np.max(mags)
+                    if max_val <= 1e-6: max_val = 1.0
+                    lvls = [0, max_val]
+                else:
+                    lvls = [0, self.spin_fft_max.value()]
+
+                # Update Image Item with explicit levels to prevent crash
+                self.img_spectrogram.setImage(self.spectrogram_buffer, autoLevels=False, levels=lvls)
+                
+                # Adjust Scale to match Frequency on Y axis
+                # Image default is 1 pixel per index. 
+                # X: Time (frames) -> 1.0
+                # Y: Freq -> freq_resolution
+                
+                # Use QTransform for scaling (resetTransform not available/reliable on Item)
+                tr = QTransform()
+                tr.scale(1, freq_resolution)
+                self.img_spectrogram.setTransform(tr)
+                self.img_spectrogram.setPos(0, 0)
+
         except Exception as e:
             print(f"FFT peak detection error: {e}")
             self.lbl_freq.setText(f"FFT Bins: {num_bins} | FFT Size: {fft_size}")

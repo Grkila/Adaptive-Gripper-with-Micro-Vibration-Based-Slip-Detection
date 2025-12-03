@@ -11,9 +11,9 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QGroupBox, QSplitter, QFrame, QScrollArea, QRadioButton, QButtonGroup,
                              QTabWidget, QTextEdit, QSpinBox, QDoubleSpinBox, QSlider,
                              QDialog, QFormLayout, QDialogButtonBox, QColorDialog, QGridLayout,
-                             QMenuBar, QMenu, QToolBar)
-from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QThread, QObject
-from PyQt6.QtGui import QColor, QPalette, QFont, QAction
+                             QMenuBar, QMenu, QToolBar, QLineEdit, QListWidget, QSizePolicy)
+from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QThread, QObject, QPoint, QRect
+from PyQt6.QtGui import QColor, QPalette, QFont, QAction, QPainter, QBrush, QPen, QRadialGradient, QLinearGradient, QConicalGradient
 import pyqtgraph as pg
 
 # ==========================================
@@ -278,10 +278,11 @@ class SignalGenerator:
 # Main Application
 # ==========================================
 class StyleEditorDialog(QDialog):
-    def __init__(self, current_style, parent=None):
+    def __init__(self, current_style, parent=None, threshold_data=None):
         super().__init__(parent)
         self.setWindowTitle("Edit Plot Style")
         self.result_style = current_style.copy()
+        self.result_threshold = None
         
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -317,10 +318,40 @@ class StyleEditorDialog(QDialog):
         self.combo_style.currentIndexChanged.connect(self.set_line_style)
         form.addRow("Line Type:", self.combo_style)
         
+        # --- Threshold Section ---
+        
+        # Spacer
+        form.addRow(QLabel(""))
+        form.addRow(QLabel("<b>Threshold Alert</b>"))
+        
+        self.chk_thresh = QCheckBox("Enable Threshold")
+        form.addRow("", self.chk_thresh)
+        
+        self.spin_thresh = QDoubleSpinBox()
+        self.spin_thresh.setRange(-10000, 10000)
+        self.spin_thresh.setDecimals(2)
+        self.spin_thresh.setEnabled(False)
+        form.addRow("Value:", self.spin_thresh)
+        
+        self.edit_thresh_name = QLineEdit()
+        self.edit_thresh_name.setPlaceholderText("Alert Name")
+        self.edit_thresh_name.setEnabled(False)
+        form.addRow("Label:", self.edit_thresh_name)
+
+        self.chk_thresh.toggled.connect(self.toggle_thresh_fields)
+        
+        if threshold_data:
+            self.chk_thresh.setChecked(True)
+            self.spin_thresh.setValue(threshold_data.get('value', 0))
+            self.edit_thresh_name.setText(threshold_data.get('name', ''))
+            self.original_threshold_id = threshold_data.get('id')
+        else:
+            self.original_threshold_id = None
+            
         layout.addLayout(form)
         
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
+        buttons.accepted.connect(self.accept_data)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         
@@ -335,6 +366,25 @@ class StyleEditorDialog(QDialog):
 
     def set_line_style(self):
         self.result_style['style'] = self.combo_style.currentData()
+
+    def toggle_thresh_fields(self, checked):
+        self.spin_thresh.setEnabled(checked)
+        self.edit_thresh_name.setEnabled(checked)
+
+    def accept_data(self):
+        if self.chk_thresh.isChecked():
+            # Create threshold dict
+            self.result_threshold = {
+                'value': self.spin_thresh.value(),
+                'name': self.edit_thresh_name.text() if self.edit_thresh_name.text() else "Alert",
+                'color': self.result_style['color'], # Inherit color
+                'style': Qt.PenStyle.DashLine, # Default style for threshold line
+                'id': self.original_threshold_id # Preserve ID if editing
+            }
+        else:
+            self.result_threshold = None # Signal to delete if it existed
+            
+        self.accept()
 
 class PlotSettingsWidget(QGroupBox):
     def __init__(self, title, plot_widget, parent=None):
@@ -431,6 +481,330 @@ class PlotSettingsWidget(QGroupBox):
             rng = self.spin_dc_range.value()
             self.plot.setYRange(avg - rng, avg + rng, padding=0)
 
+class LampWidget(QWidget):
+    """Industrial-style indicator lamp widget"""
+    def __init__(self, name, color, parent=None):
+        super().__init__(parent)
+        self.name = name
+        self.base_color = QColor(color)
+        self.active = False
+        self.setMinimumSize(130, 150)
+        self.setMaximumSize(130, 150)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        
+    def set_status(self, active):
+        if self.active != active:
+            self.active = active
+            self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            w = self.width()
+            h = self.height()
+            
+            # Lamp layout parameters
+            cx = w // 2
+            cy = 55  # Fixed from top
+            lamp_radius = 32
+            
+            # === METAL HOUSING/BEZEL ===
+            # Outer bezel ring with metallic gradient
+            bezel_outer = 38
+            bezel_grad = QLinearGradient(cx - bezel_outer, cy - bezel_outer, 
+                                         cx + bezel_outer, cy + bezel_outer)
+            bezel_grad.setColorAt(0.0, QColor("#d0d0d0"))
+            bezel_grad.setColorAt(0.3, QColor("#f5f5f5"))
+            bezel_grad.setColorAt(0.7, QColor("#888888"))
+            bezel_grad.setColorAt(1.0, QColor("#505050"))
+            
+            painter.setBrush(QBrush(bezel_grad))
+            painter.setPen(QPen(QColor("#222"), 2))
+            painter.drawEllipse(QPoint(cx, cy), bezel_outer, bezel_outer)
+            
+            # Inner black seal ring
+            painter.setBrush(QBrush(QColor("#181818")))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPoint(cx, cy), lamp_radius + 2, lamp_radius + 2)
+            
+            # === LAMP LENS/BULB ===
+            if self.active:
+                # ACTIVE STATE: Bright, glowing
+                # Inner hotspot gradient
+                bulb_grad = QRadialGradient(cx - 8, cy - 8, lamp_radius * 1.8)
+                bulb_grad.setColorAt(0.0, QColor("#ffffff"))
+                bulb_grad.setColorAt(0.15, self.base_color.lighter(180))
+                bulb_grad.setColorAt(0.5, self.base_color)
+                bulb_grad.setColorAt(0.85, self.base_color.darker(140))
+                bulb_grad.setColorAt(1.0, self.base_color.darker(180))
+                
+                painter.setBrush(QBrush(bulb_grad))
+                painter.setPen(QPen(QColor("#0a0a0a"), 1))
+                painter.drawEllipse(QPoint(cx, cy), lamp_radius, lamp_radius)
+                
+                # Outer glow halo
+                for i in range(3):
+                    glow_c = QColor(self.base_color)
+                    glow_c.setAlpha(30 - i * 8)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.setPen(QPen(glow_c, 3 - i))
+                    r = lamp_radius + 6 + i * 3
+                    painter.drawEllipse(QPoint(cx, cy), r, r)
+                    
+            else:
+                # INACTIVE STATE: Dull, dark
+                off_color = QColor(self.base_color)
+                off_color.setHsv(off_color.hue(), 
+                                off_color.saturation() // 3, 
+                                35)
+                
+                bulb_grad = QRadialGradient(cx - 10, cy - 10, lamp_radius * 1.5)
+                bulb_grad.setColorAt(0.0, off_color.lighter(160))
+                bulb_grad.setColorAt(0.6, off_color)
+                bulb_grad.setColorAt(1.0, off_color.darker(250))
+                
+                painter.setBrush(QBrush(bulb_grad))
+                painter.setPen(QPen(QColor("#0a0a0a"), 1))
+                painter.drawEllipse(QPoint(cx, cy), lamp_radius, lamp_radius)
+
+            # === GLASS REFLECTION/GLOSS ===
+            # Top highlight (curved reflection)
+            hi_w = int(lamp_radius * 0.7)
+            hi_h = int(lamp_radius * 0.4)
+            hi_x = cx - hi_w // 2
+            hi_y = int(cy - lamp_radius * 0.5)
+            
+            highlight_grad = QLinearGradient(hi_x, hi_y, hi_x, hi_y + hi_h)
+            c_high = QColor(255, 255, 255, 150 if self.active else 80)
+            c_trans = QColor(255, 255, 255, 0)
+            highlight_grad.setColorAt(0.0, c_high)
+            highlight_grad.setColorAt(1.0, c_trans)
+            
+            painter.setBrush(QBrush(highlight_grad))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(hi_x, hi_y, hi_w, hi_h)
+
+            # === LABEL NAMEPLATE ===
+            plate_y = h - 42
+            plate_w = w - 12
+            plate_h = 28
+            plate_x = 6
+            
+            # Screw holes (decorative)
+            screw_d = 6
+            painter.setBrush(QBrush(QColor("#0a0a0a")))
+            painter.setPen(QPen(QColor("#555"), 1))
+            painter.drawEllipse(plate_x + 2, plate_y + plate_h//2 - screw_d//2, screw_d, screw_d)
+            painter.drawEllipse(plate_x + plate_w - screw_d - 2, plate_y + plate_h//2 - screw_d//2, screw_d, screw_d)
+            
+            # Nameplate body with engraved look
+            label_rect = QRect(plate_x + 12, plate_y, plate_w - 24, plate_h)
+            
+            # Plate background (brushed metal effect)
+            plate_grad = QLinearGradient(label_rect.left(), label_rect.top(), 
+                                         label_rect.right(), label_rect.bottom())
+            plate_grad.setColorAt(0.0, QColor("#4a4a4a"))
+            plate_grad.setColorAt(0.5, QColor("#3a3a3a"))
+            plate_grad.setColorAt(1.0, QColor("#2a2a2a"))
+            
+            painter.setBrush(QBrush(plate_grad))
+            painter.setPen(QPen(QColor("#555"), 1))
+            painter.drawRoundedRect(label_rect, 3, 3)
+            
+            # Engraved border
+            painter.setPen(QPen(QColor("#1a1a1a"), 1))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            inner_rect = label_rect.adjusted(2, 2, -2, -2)
+            painter.drawRoundedRect(inner_rect, 2, 2)
+            
+            # Label text (engraved look with shadow)
+            # Shadow
+            painter.setPen(QColor("#0a0a0a"))
+            font = painter.font()
+            font.setFamily("Arial")
+            font.setBold(True)
+            font.setPointSize(8)
+            painter.setFont(font)
+            shadow_rect = label_rect.adjusted(1, 1, 1, 1)
+            painter.drawText(shadow_rect, Qt.AlignmentFlag.AlignCenter, self.name)
+            
+            # Main text
+            painter.setPen(QColor("#cccccc"))
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, self.name)
+            
+        except Exception as e:
+            print(f"LampWidget paint error: {e}")
+        finally:
+            painter.end()
+
+class LampPanel(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.WindowType.Window)
+        self.setWindowTitle("THRESHOLD MONITOR PANEL")
+        self.resize(550, 450)
+        
+        # Industrial Control Panel Style
+        self.setStyleSheet("""
+            QWidget {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3a3a3a, stop:1 #2b2b2b);
+                font-family: 'Segoe UI', 'Arial';
+                border: 2px solid #555;
+            }
+        """)
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        
+        # Title Bar
+        title_label = QLabel("THRESHOLD STATUS")
+        title_label.setStyleSheet("""
+            QLabel {
+                background-color: #222;
+                color: #0ff;
+                font-size: 14pt;
+                font-weight: bold;
+                font-family: 'Consolas', 'Courier New';
+                padding: 8px;
+                border: 2px solid #444;
+                border-radius: 3px;
+                letter-spacing: 2px;
+            }
+        """)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(title_label)
+        
+        # Lamp Grid Container with industrial panel look
+        lamp_container = QWidget()
+        lamp_container.setStyleSheet("""
+            QWidget {
+                background-color: #353535;
+                border: 3px inset #444;
+                border-radius: 5px;
+            }
+        """)
+        
+        self.layout = QGridLayout(lamp_container)
+        self.layout.setSpacing(15)
+        self.layout.setContentsMargins(20, 20, 20, 20)
+        
+        main_layout.addWidget(lamp_container, stretch=1)
+        
+        self.lamps = {}  # id -> LampWidget
+        
+    def update_lamps(self, thresholds, active_ids):
+        # Remove old lamps not in thresholds
+        current_ids = set(t['id'] for t in thresholds)
+        for lid in list(self.lamps.keys()):
+            if lid not in current_ids:
+                self.layout.removeWidget(self.lamps[lid])
+                self.lamps[lid].deleteLater()
+                del self.lamps[lid]
+        
+        # Add/Update lamps in grid
+        row, col = 0, 0
+        max_cols = 4
+        
+        for i, thresh in enumerate(thresholds):
+            lid = thresh['id']
+            
+            if lid not in self.lamps:
+                lamp = LampWidget(thresh['name'], thresh['color'])
+                self.lamps[lid] = lamp
+            else:
+                # Update existing lamp properties
+                self.lamps[lid].name = thresh['name']
+                self.lamps[lid].base_color = QColor(thresh['color'])
+            
+            # Position in grid
+            self.layout.addWidget(self.lamps[lid], row, col)
+            col += 1
+            if col >= max_cols:
+                col = 0
+                row += 1
+            
+            # Update lamp status (on/off)
+            self.lamps[lid].set_status(lid in active_ids)
+
+class ThresholdEditorDialog(QDialog):
+    def __init__(self, signals, current_data=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Threshold")
+        self.result_data = {}
+        
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        
+        self.combo_signal = QComboBox()
+        for s in signals:
+            self.combo_signal.addItem(s)
+            
+        self.spin_value = QDoubleSpinBox()
+        self.spin_value.setRange(-10000, 10000)
+        self.spin_value.setDecimals(2)
+        
+        self.edit_name = QLineEdit()
+        self.edit_name.setPlaceholderText("e.g. Max Current")
+        
+        self.btn_color = QPushButton()
+        self.color = "#ff0000"
+        self.btn_color.setStyleSheet(f"background-color: {self.color}")
+        self.btn_color.clicked.connect(self.pick_color)
+        
+        self.combo_style = QComboBox()
+        self.styles = {
+            "Solid": Qt.PenStyle.SolidLine,
+            "Dash": Qt.PenStyle.DashLine,
+            "Dot": Qt.PenStyle.DotLine
+        }
+        for k, v in self.styles.items():
+            self.combo_style.addItem(k, v)
+            
+        form.addRow("Signal:", self.combo_signal)
+        form.addRow("Threshold Value:", self.spin_value)
+        form.addRow("Label Name:", self.edit_name)
+        form.addRow("Color:", self.btn_color)
+        form.addRow("Line Style:", self.combo_style)
+        
+        layout.addLayout(form)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.validate)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+        if current_data:
+            idx = self.combo_signal.findText(current_data['signal'])
+            if idx >= 0: self.combo_signal.setCurrentIndex(idx)
+            self.spin_value.setValue(current_data['value'])
+            self.edit_name.setText(current_data['name'])
+            self.color = current_data['color']
+            self.btn_color.setStyleSheet(f"background-color: {self.color}")
+            
+            idx_style = self.combo_style.findData(current_data['style'])
+            if idx_style >= 0: self.combo_style.setCurrentIndex(idx_style)
+
+    def pick_color(self):
+        c = QColorDialog.getColor(QColor(self.color), self, "Select Color")
+        if c.isValid():
+            self.color = c.name()
+            self.btn_color.setStyleSheet(f"background-color: {self.color}")
+
+    def validate(self):
+        if not self.edit_name.text().strip():
+            self.edit_name.setText(f"{self.combo_signal.currentText()} > {self.spin_value.value()}")
+            
+        self.result_data = {
+            'signal': self.combo_signal.currentText(),
+            'value': self.spin_value.value(),
+            'name': self.edit_name.text(),
+            'color': self.color,
+            'style': self.combo_style.currentData()
+        }
+        self.accept()
+
 class AdaptiveGripperGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -452,6 +826,11 @@ class AdaptiveGripperGUI(QMainWindow):
         self.fft_data = {'freqs': [], 'mags': []}
         self.recorded_events = []
         self.current_segment_start = None
+
+        # Thresholds
+        self.thresholds = [] 
+        self.threshold_lines = {} 
+        self.lamp_panel = LampPanel()
         
         # Recording & Replay
         self.is_recording = False
@@ -694,6 +1073,34 @@ class AdaptiveGripperGUI(QMainWindow):
         grp_ana.setLayout(v_ana)
         sidebar_layout.addWidget(grp_ana)
         
+        # --- Thresholds ---
+        grp_thresh = QGroupBox("Thresholds")
+        v_thresh = QVBoxLayout()
+        
+        self.list_thresholds = QListWidget()
+        self.list_thresholds.setFixedHeight(100)
+        v_thresh.addWidget(self.list_thresholds)
+        
+        h_btns = QHBoxLayout()
+        btn_add = QPushButton("Add")
+        btn_add.clicked.connect(self.add_threshold)
+        btn_edit = QPushButton("Edit")
+        btn_edit.clicked.connect(self.edit_threshold)
+        btn_del = QPushButton("Del")
+        btn_del.clicked.connect(self.remove_threshold)
+        h_btns.addWidget(btn_add)
+        h_btns.addWidget(btn_edit)
+        h_btns.addWidget(btn_del)
+        v_thresh.addLayout(h_btns)
+        
+        btn_lamps = QPushButton("Show Lamp Panel")
+        btn_lamps.clicked.connect(self.toggle_lamp_panel)
+        v_thresh.addWidget(btn_lamps)
+        
+        grp_thresh.setLayout(v_thresh)
+        sidebar_layout.addWidget(grp_thresh)
+        # ------------------
+        
         sidebar_layout.addStretch()
         main_layout.addWidget(scroll_sidebar)
 
@@ -731,6 +1138,140 @@ class AdaptiveGripperGUI(QMainWindow):
         main_layout.addWidget(self.tabs, stretch=1)
         self.update_layout_visibility()
 
+    def add_threshold(self):
+        # Use dynamic keys if possible, otherwise fallback
+        signals = sorted(list(self.curve_styles.keys()))
+        dlg = ThresholdEditorDialog(signals, parent=self)
+        if dlg.exec():
+            data = dlg.result_data
+            data['id'] = str(time.time())
+            self.thresholds.append(data)
+            self.update_threshold_list()
+            self.update_threshold_lines()
+            self.lamp_panel.update_lamps(self.thresholds, [])
+
+    def edit_threshold(self):
+        row = self.list_thresholds.currentRow()
+        if row < 0: return
+        
+        old_data = self.thresholds[row]
+        signals = sorted(list(self.curve_styles.keys()))
+        dlg = ThresholdEditorDialog(signals, current_data=old_data, parent=self)
+        if dlg.exec():
+            data = dlg.result_data
+            data['id'] = old_data['id']
+            self.thresholds[row] = data
+            self.update_threshold_list()
+            self.update_threshold_lines()
+            self.lamp_panel.update_lamps(self.thresholds, [])
+
+    def remove_threshold(self):
+        row = self.list_thresholds.currentRow()
+        if row < 0: return
+        
+        del self.thresholds[row]
+        self.update_threshold_list()
+        self.update_threshold_lines()
+        self.lamp_panel.update_lamps(self.thresholds, [])
+
+    def update_threshold_list(self):
+        self.list_thresholds.clear()
+        for t in self.thresholds:
+            self.list_thresholds.addItem(f"{t['name']} ({t['signal']} > {t['value']})")
+
+    def toggle_lamp_panel(self):
+        if self.lamp_panel.isVisible():
+            self.lamp_panel.hide()
+        else:
+            self.lamp_panel.show()
+
+    def update_threshold_lines(self):
+        # Clear all existing threshold lines from both plots
+        for line_set in self.threshold_lines.values():
+            for line in line_set:
+                try:
+                    self.plot_time_1.removeItem(line)
+                except: 
+                    pass
+                try:
+                    self.plot_time_2.removeItem(line)
+                except: 
+                    pass
+        self.threshold_lines.clear()
+        
+        # Don't create lines if in FFT mode
+        if self.action_show_fft.isChecked():
+            return
+        
+        # Recreate threshold lines based on current signal visibility
+        for t in self.thresholds:
+            sig = t['signal']
+            
+            # Check if this signal curve exists and is visible on each plot
+            visible_p1 = (sig in self.curves_p1 and 
+                         self.curves_p1[sig].isVisible() and 
+                         self.plot_time_1.isVisible())
+            
+            visible_p2 = (sig in self.curves_p2 and 
+                         self.curves_p2[sig].isVisible() and 
+                         self.plot_time_2.isVisible())
+            
+            lines_created = []
+            
+            # Create line for Plot 1 if signal is visible there
+            if visible_p1:
+                pen1 = pg.mkPen(color=t['color'], width=2, style=t['style'])
+                opts1 = {'position': 0.1, 'color': t['color'], 'movable': False}
+                line_p1 = pg.InfiniteLine(angle=0, pos=t['value'], pen=pen1, label=t['name'], labelOpts=opts1)
+                line_p1.setZValue(100)  # Ensure threshold lines are on top
+                self.plot_time_1.addItem(line_p1)
+                lines_created.append(line_p1)
+                
+            # Create line for Plot 2 if signal is visible there
+            if visible_p2:
+                pen2 = pg.mkPen(color=t['color'], width=2, style=t['style'])
+                opts2 = {'position': 0.1, 'color': t['color'], 'movable': False}
+                line_p2 = pg.InfiniteLine(angle=0, pos=t['value'], pen=pen2, label=t['name'], labelOpts=opts2)
+                line_p2.setZValue(100)  # Ensure threshold lines are on top
+                self.plot_time_2.addItem(line_p2)
+                lines_created.append(line_p2)
+            
+            # Store references to created lines
+            if lines_created:
+                self.threshold_lines[t['id']] = lines_created
+
+    def check_thresholds(self):
+        """Check threshold conditions and update lamp panel in real-time"""
+        if not self.thresholds: 
+            return
+        
+        active_ids = set()
+        visible_thresholds = []
+        
+        for t in self.thresholds:
+            sig = t['signal']
+            
+            # Check if signal is active/visible on EITHER plot
+            is_enabled = False
+            if sig in self.curves_p1 and self.curves_p1[sig].isVisible(): 
+                is_enabled = True
+            if sig in self.curves_p2 and self.curves_p2[sig].isVisible(): 
+                is_enabled = True
+            
+            # Only process visible thresholds
+            if is_enabled:
+                visible_thresholds.append(t)
+                
+                # Check if threshold is exceeded
+                if sig in self.data and self.data[sig]:
+                    val = self.data[sig][-1]
+                    if val > t['value']:
+                        active_ids.add(t['id'])
+        
+        # Only show lamps for thresholds with visible signals
+        self.lamp_panel.update_lamps(visible_thresholds, active_ids)
+
+
     def update_layout_visibility(self):
         show_fft = self.action_show_fft.isChecked()
         show_p2 = self.chk_show_p2.isChecked()
@@ -749,6 +1290,9 @@ class AdaptiveGripperGUI(QMainWindow):
                 self.viz_splitter.setSizes([1000, 1000, 0])
             else:
                 self.viz_splitter.setSizes([1000, 0, 0])
+        
+        # Update threshold lines when plot visibility changes
+        self.update_threshold_lines()
     
     def setup_replay_ui(self, parent):
         layout = QVBoxLayout(parent)
@@ -951,6 +1495,8 @@ class AdaptiveGripperGUI(QMainWindow):
                     if not checked:
                         cp1.setChecked(False)
                         cp2.setChecked(False)
+                # Update threshold lines when group is toggled
+                self.update_threshold_lines()
             
             chk_cmd.toggled.connect(on_main_toggle)
             
@@ -1008,6 +1554,9 @@ class AdaptiveGripperGUI(QMainWindow):
             # Replay P2
             if hasattr(self, 'replay_curves_p2') and key in self.replay_curves_p2:
                 self.replay_curves_p2[key].setVisible(visible)
+                
+        # Update thresholds visibility immediately
+        self.update_threshold_lines()
 
     def send_stream_command(self, key, enabled):
         if self.is_connected and self.serial_thread:
@@ -1067,11 +1616,43 @@ class AdaptiveGripperGUI(QMainWindow):
         if key not in self.curve_styles:
             return
             
-        dlg = StyleEditorDialog(self.curve_styles[key], self)
+        # Find existing threshold for this key (if any)
+        current_threshold = None
+        for t in self.thresholds:
+            if t['signal'] == key:
+                current_threshold = t
+                break
+            
+        dlg = StyleEditorDialog(self.curve_styles[key], self, threshold_data=current_threshold)
         if dlg.exec():
+            # Update Style
             self.curve_styles[key] = dlg.result_style
             self.update_curve_style(key)
-
+            
+            # Update Threshold
+            new_thresh = dlg.result_threshold
+            
+            if current_threshold and not new_thresh:
+                # Removed
+                self.thresholds = [t for t in self.thresholds if t['id'] != current_threshold['id']]
+            elif not current_threshold and new_thresh:
+                # Added
+                new_thresh['signal'] = key
+                new_thresh['id'] = str(time.time())
+                self.thresholds.append(new_thresh)
+            elif current_threshold and new_thresh:
+                # Updated
+                new_thresh['signal'] = key
+                # Update in place
+                for i, t in enumerate(self.thresholds):
+                    if t['id'] == current_threshold['id']:
+                        self.thresholds[i] = new_thresh
+                        break
+            
+            self.update_threshold_list()
+            self.update_threshold_lines()
+            self.lamp_panel.update_lamps(self.thresholds, [])
+    
     def toggle_fft_scale(self, checked):
         self.spin_fft_max.setEnabled(not checked)
         if checked:
@@ -1346,6 +1927,8 @@ class AdaptiveGripperGUI(QMainWindow):
              self.curve_fft.setData(self.fft_data['freqs'], self.fft_data['mags'])
         else:
             pass
+            
+        self.check_thresholds()
 
     def mark_event(self, label):
         if not self.data['timestamp']:

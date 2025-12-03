@@ -6,6 +6,7 @@ namespace FFTProcessor {
   static int counter = 0;
   
   bool processSingleAxis(AxisFFT& axisData, double value) {
+    bool justFinished = false;
     // Protect FFT data access with mutex
     if (mutexFFTData != NULL && xSemaphoreTake(mutexFFTData, 0) == pdTRUE) {
       
@@ -21,13 +22,14 @@ namespace FFTProcessor {
           axisData.fft.complexToMagnitude();
           axisData.index = 0;
           axisData.FFT_complete = true;
+          justFinished = true;
         }
       }
       
       xSemaphoreGive(mutexFFTData);
     }
     
-    return axisData.FFT_complete;
+    return justFinished;
   }
   
   void process(const MagneticData& data) {

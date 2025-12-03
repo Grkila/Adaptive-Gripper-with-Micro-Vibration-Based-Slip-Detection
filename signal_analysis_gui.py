@@ -1504,6 +1504,10 @@ class AdaptiveGripperGUI(QMainWindow):
             if self.replay_data:
                 self.configure_view_from_row(self.replay_data[0])
                 
+                # Auto-detect FFT
+                has_fft = len(self.replay_fft_data) > 0
+                self.chk_replay_fft.setChecked(has_fft)
+                
                 self.slider_replay.setRange(0, len(self.replay_data) - 1)
                 self.slider_replay.setValue(0)
                 self.replay_index = 0
@@ -1564,7 +1568,7 @@ class AdaptiveGripperGUI(QMainWindow):
         if not self.replay_data:
             return
             
-        window = self.settings_replay.spin_window.value()
+        window = self.settings_replay_1.spin_window.value()
         start_idx = max(0, self.replay_index - window)
         end_idx = self.replay_index + 1
         
@@ -1582,11 +1586,11 @@ class AdaptiveGripperGUI(QMainWindow):
                     if settings.chk_center.isChecked():
                         visible_values.extend(y)
 
-        update_replay_curves(self.replay_curves_p1, self.settings_replay) # Replay Settings used for P1
+        update_replay_curves(self.replay_curves_p1, self.settings_replay_1) # Replay Settings used for P1
         if self.settings_replay_2.isVisible():
              update_replay_curves(self.replay_curves_p2, self.settings_replay_2)
 
-        self.settings_replay.apply_dc_center(visible_values)
+        self.settings_replay_1.apply_dc_center(visible_values)
         
         cur_t = self.replay_data[self.replay_index].get('t', 0)
         
@@ -1605,11 +1609,13 @@ class AdaptiveGripperGUI(QMainWindow):
                 self.curve_replay_fft.setData(freqs, fft_vals)
             else:
                 self.curve_replay_fft.clear()
+        else:
+            self.curve_replay_fft.clear()
         
         self.lbl_replay_time.setText(f"{cur_t:.2f} ms")
         
         if t:
-            self.plot_replay.setXRange(min(t), max(t) + 0.1, padding=0)
+            self.plot_replay_1.setXRange(min(t), max(t) + 0.1, padding=0)
             if hasattr(self, 'plot_replay_2') and self.plot_replay_2.isVisible():
                 self.plot_replay_2.setXRange(min(t), max(t) + 0.1, padding=0)
 

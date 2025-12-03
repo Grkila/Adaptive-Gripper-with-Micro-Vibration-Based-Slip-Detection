@@ -131,7 +131,7 @@ void setup() {
 // ============================================
 void readInputsSequentially() {
   // --- HIGH PRIORITY (Every 0.5ms / 2kHz) ---
-  double raw_x, raw_y, raw_z;
+  double raw_x=0, raw_y=0, raw_z=0;
   MagneticSensor::read(raw_x, raw_y, raw_z);
   MagneticSensor::applyCalibration(raw_x, raw_y, raw_z, calData);
   

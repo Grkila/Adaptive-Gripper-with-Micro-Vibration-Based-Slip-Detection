@@ -252,29 +252,6 @@ class SerialWorker(QThread):
         self.wait()
 
 # ==========================================
-# Signal Generator (Simulation)
-# ==========================================
-class SignalGenerator:
-    def __init__(self):
-        self.t = 0
-    
-    def next_sample(self):
-        self.t += 0.01
-        mx = 10 * np.sin(2 * np.pi * 1.0 * self.t) + np.random.normal(0, 0.5)
-        my = 10 * np.sin(2 * np.pi * 2.0 * self.t + np.pi/4) + np.random.normal(0, 0.5)
-        mz = 10 * np.sin(2 * np.pi * 0.5 * self.t + np.pi/2) + np.random.normal(0, 0.5)
-        mag = np.sqrt(mx**2 + my**2 + mz**2)
-        cur = 5 + 2 * np.sin(2 * np.pi * 5.0 * self.t) + np.random.normal(0, 0.2)
-        
-        return {
-            "mlx": mx, "mly": my, "mlz": mz,
-            "mhx": mx * 0.1, "mhy": my * 0.1, "mhz": mz * 0.1,
-            "rmx": mx + np.random.normal(0, 2), "rmy": my + np.random.normal(0, 2), "rmz": mz + np.random.normal(0, 2),
-            "mag": mag, "cur": cur, "slip": 0,
-            "t": self.t * 1000 
-        }
-
-# ==========================================
 # Main Application
 # ==========================================
 class StyleEditorDialog(QDialog):
@@ -823,7 +800,7 @@ class AdaptiveGripperGUI(QMainWindow):
         }
         self.spike_buffer = {k: [] for k in self.data.keys() if k != 'timestamp'}
         
-        self.fft_data = {'freqs': [], 'mags': []}
+        self.fft_data = {'freqs': [], 'mags': [], 'freq_resolution': 1.0, 'fft_size': 0}
         self.recorded_events = []
         self.current_segment_start = None
 
@@ -841,8 +818,6 @@ class AdaptiveGripperGUI(QMainWindow):
         self.replay_index = 0
         
         self.serial_thread = None
-        self.sim_generator = SignalGenerator()
-        self.is_simulating = False
         self.is_connected = False
         
         self.curve_styles = {
@@ -974,11 +949,6 @@ class AdaptiveGripperGUI(QMainWindow):
         toolbar.addAction(btn_refresh)
         
         toolbar.addSeparator()
-        self.chk_sim = QCheckBox("Simulation")
-        self.chk_sim.toggled.connect(self.toggle_simulation)
-        toolbar.addWidget(self.chk_sim)
-        
-        toolbar.addSeparator()
         self.btn_record = QPushButton(" Record ")
         self.btn_record.setCheckable(True)
         self.btn_record.clicked.connect(self.toggle_recording)
@@ -1012,16 +982,8 @@ class AdaptiveGripperGUI(QMainWindow):
         grp_fft_cfg = QGroupBox("FFT Config")
         v_fft_cfg = QVBoxLayout()
         
-        h_samp = QHBoxLayout()
-        h_samp.addWidget(QLabel("Samples:"))
-        self.spin_fft_samples = QSpinBox()
-        self.spin_fft_samples.setRange(32, 2048)
-        self.spin_fft_samples.setValue(128)
-        h_samp.addWidget(self.spin_fft_samples)
-        v_fft_cfg.addLayout(h_samp)
-        
         h_rate = QHBoxLayout()
-        h_rate.addWidget(QLabel("Rate (Hz):"))
+        h_rate.addWidget(QLabel("Sample Rate (Hz):"))
         self.spin_fft_rate = QSpinBox()
         self.spin_fft_rate.setRange(1, 10000)
         self.spin_fft_rate.setValue(2000) 
@@ -1068,8 +1030,12 @@ class AdaptiveGripperGUI(QMainWindow):
         self.chk_despike = QCheckBox("Despike (Median Filter)")
         self.chk_despike.setChecked(True)
         v_ana.addWidget(self.chk_despike)
-        self.lbl_freq = QLabel("Dominant Freq: 0.0 Hz")
+        
+        self.lbl_freq = QLabel("Waiting for FFT data...")
+        self.lbl_freq.setWordWrap(True)
+        self.lbl_freq.setStyleSheet("font-size: 9pt;")
         v_ana.addWidget(self.lbl_freq)
+        
         grp_ana.setLayout(v_ana)
         sidebar_layout.addWidget(grp_ana)
         
@@ -1113,10 +1079,19 @@ class AdaptiveGripperGUI(QMainWindow):
         self.viz_splitter.addWidget(self.plot_time_1)
         self.viz_splitter.addWidget(self.plot_time_2)
         
-        self.plot_fft = pg.PlotWidget(title="Real-Time FFT")
-        self.plot_fft.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_fft = pg.PlotWidget(title="Real-Time FFT (DTFT Style)")
+        self.plot_fft.showGrid(x=True, y=True, alpha=0.5)
         self.plot_fft.setLabel('bottom', "Frequency", units='Hz')
         self.plot_fft.setLabel('left', "Magnitude")
+        self.plot_fft.getAxis('bottom').setTicks([])  # We'll set custom ticks
+        
+        # Add vertical line at 30Hz for reference (highpass cutoff)
+        self.fft_ref_line_30hz = pg.InfiniteLine(angle=90, pos=30, 
+                                                  pen=pg.mkPen('r', width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
+                                                  label='30Hz Cutoff',
+                                                  labelOpts={'position':0.95, 'color': (255, 0, 0)})
+        self.plot_fft.addItem(self.fft_ref_line_30hz)
+        
         self.viz_splitter.addWidget(self.plot_fft)
         
         layout_viz.addWidget(self.viz_splitter)
@@ -1352,7 +1327,10 @@ class AdaptiveGripperGUI(QMainWindow):
         self.plot_replay_2.setVisible(False)
         self.replay_splitter.addWidget(self.plot_replay_2)
         
-        self.plot_replay_fft = pg.PlotWidget(title="Replay FFT")
+        self.plot_replay_fft = pg.PlotWidget(title="Replay FFT (DTFT Style)")
+        self.plot_replay_fft.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_replay_fft.setLabel('bottom', "Frequency", units='Hz')
+        self.plot_replay_fft.setLabel('left', "Magnitude")
         self.replay_splitter.addWidget(self.plot_replay_fft)
         
         layout.addWidget(self.replay_splitter)
@@ -1391,8 +1369,13 @@ class AdaptiveGripperGUI(QMainWindow):
             self.replay_curves_p1[key].setVisible(False)
             self.replay_curves_p2[key].setVisible(False)
 
-        # Replay Curve (FFT)
-        self.curve_replay_fft = self.plot_replay_fft.plot(pen=pg.mkPen(COLOR_ACCENT_1, width=2, fillLevel=0, brush=(0, 188, 212, 50)))
+        # Replay FFT Bar Graph with border for better visibility
+        self.curve_replay_fft = pg.BarGraphItem(
+            x=[], height=[], width=1.0, 
+            brush=COLOR_ACCENT_1, 
+            pen=pg.mkPen(COLOR_ACCENT_1, width=1)
+        )
+        self.plot_replay_fft.addItem(self.curve_replay_fft)
         
         # For backward compatibility with existing logic that uses self.replay_curves
         self.replay_curves = self.replay_curves_p1
@@ -1593,7 +1576,13 @@ class AdaptiveGripperGUI(QMainWindow):
             self.curves_p1[key] = create_curve(self.plot_time_1, key, names[key])
             self.curves_p2[key] = create_curve(self.plot_time_2, key, names[key])
 
-        self.curve_fft = self.plot_fft.plot(pen=pg.mkPen(COLOR_ACCENT_1, width=2, fillLevel=0, brush=(0, 188, 212, 50)))
+        # FFT Bar Graph with border for better visibility
+        self.curve_fft = pg.BarGraphItem(
+            x=[], height=[], width=1.0, 
+            brush=COLOR_ACCENT_1, 
+            pen=pg.mkPen(COLOR_ACCENT_1, width=1)
+        )
+        self.plot_fft.addItem(self.curve_fft)
 
     def update_curve_style(self, key):
         if key not in self.curve_styles:
@@ -1677,16 +1666,6 @@ class AdaptiveGripperGUI(QMainWindow):
         for p in ports:
             self.combo_ports.addItem(p.device)
 
-    def toggle_simulation(self, checked):
-        self.is_simulating = checked
-        if checked:
-            if self.is_connected:
-                self.toggle_connection() 
-            self.action_connect.setEnabled(False)
-            self.combo_ports.setEnabled(False)
-        else:
-            self.action_connect.setEnabled(True)
-            self.combo_ports.setEnabled(True)
 
     def toggle_connection(self):
         if not self.is_connected:
@@ -1728,7 +1707,6 @@ class AdaptiveGripperGUI(QMainWindow):
             
             self.is_connected = True
             self.action_connect.setText("Disconnect")
-            self.chk_sim.setEnabled(False)
         else:
             if self.serial_thread:
                 self.serial_thread.stop()
@@ -1736,7 +1714,6 @@ class AdaptiveGripperGUI(QMainWindow):
             
             self.is_connected = False
             self.action_connect.setText("Connect")
-            self.chk_sim.setEnabled(True)
             
             self.grp_mag.setChecked(False)
             self.grp_mag_hp.setChecked(False)
@@ -1787,22 +1764,65 @@ class AdaptiveGripperGUI(QMainWindow):
         self.append_data(data)
 
     def process_external_fft(self, fft_vals):
-        sample_rate = self.spin_fft_rate.value()
+        """Process FFT data received from device"""
         num_bins = len(fft_vals)
         if num_bins < 2: 
             return
-            
-        freqs = np.linspace(0, sample_rate / 2, num_bins)
         
+        # Get sample rate from config
+        sample_rate = self.spin_fft_rate.value()
+        
+        # Calculate frequency bins dynamically
+        # Arduino sends FFT_SAMPLES/2 bins from a full FFT_SAMPLES-point FFT
+        # So if we receive num_bins, the original FFT size is num_bins * 2
+        # Frequency resolution = sample_rate / fft_size
+        fft_size = num_bins * 2
+        freq_resolution = sample_rate / fft_size
+        
+        # Calculate center frequency for each bin
+        freqs = np.arange(num_bins) * freq_resolution
+        
+        # Convert to numpy array for consistency
+        mags = np.array(fft_vals)
+        
+        # Debug: Print first few bins to verify frequency mapping
+        print(f"\n=== FFT Debug Info ===")
+        print(f"Sample Rate: {sample_rate} Hz")
+        print(f"Num Bins: {num_bins}")
+        print(f"FFT Size: {fft_size}")
+        print(f"Freq Resolution: {freq_resolution:.3f} Hz")
+        print(f"Max Frequency: {freqs[-1]:.1f} Hz (should be ~{sample_rate/2:.1f} Hz)")
+        print(f"\nFirst 10 bins:")
+        for i in range(min(10, num_bins)):
+            print(f"  Bin {i}: {freqs[i]:.2f} Hz -> Mag {mags[i]:.3f}")
+        if num_bins > 10:
+            print(f"  ...")
+            print(f"  Bin {num_bins-1}: {freqs[-1]:.2f} Hz -> Mag {mags[-1]:.3f}")
+        
+        # Store FFT data
         self.fft_data['freqs'] = freqs
-        self.fft_data['mags'] = fft_vals
+        self.fft_data['mags'] = mags
+        self.fft_data['freq_resolution'] = freq_resolution
+        self.fft_data['fft_size'] = fft_size
         
+        # Find dominant frequency (skip DC component at index 0)
         try:
-            idx_peak = np.argmax(fft_vals[1:]) + 1
-            dom_freq = freqs[idx_peak]
-            self.lbl_freq.setText(f"Dominant Freq: {dom_freq:.1f} Hz")
-        except:
-            pass
+            if len(mags) > 1:
+                idx_peak = np.argmax(mags[1:]) + 1
+                dom_freq = freqs[idx_peak]
+                dom_mag = mags[idx_peak]
+                
+                # Also show first few bin magnitudes for highpass filter verification
+                first_bins_info = f"Bins 0-2: {mags[0]:.2f}, {mags[1]:.2f}, {mags[2]:.2f}" if len(mags) > 2 else ""
+                
+                self.lbl_freq.setText(
+                    f"Dominant: {dom_freq:.1f} Hz (Mag: {dom_mag:.1f})\n"
+                    f"Bins: {num_bins} | FFT Size: {fft_size} | Res: {freq_resolution:.2f} Hz\n"
+                    f"{first_bins_info}"
+                )
+        except Exception as e:
+            print(f"FFT peak detection error: {e}")
+            self.lbl_freq.setText(f"FFT Bins: {num_bins} | FFT Size: {fft_size}")
 
     def append_data(self, data):
         ts = data.get('t', 0)
@@ -1891,18 +1911,6 @@ class AdaptiveGripperGUI(QMainWindow):
             self.text_raw.append(f">> RECORDING STOPPED.")
 
     def update_loop(self):
-        if self.is_simulating:
-            for _ in range(3): 
-                d = self.sim_generator.next_sample()
-                self.append_data(d)
-                
-            if np.random.random() < 0.1:
-                freqs = np.linspace(0, 50, 64)
-                mags = np.random.random(64) * 10
-                mags[10] = 50 
-                self.fft_data['freqs'] = freqs
-                self.fft_data['mags'] = mags
-
         if len(self.data['timestamp']) > 1:
             
             def update_plot_curves(curves, settings):
@@ -1923,10 +1931,54 @@ class AdaptiveGripperGUI(QMainWindow):
             if self.plot_time_2.isVisible():
                 update_plot_curves(self.curves_p2, self.settings_p2)
                     
-        if len(self.fft_data['freqs']) > 0 and len(self.fft_data['mags']) > 0 and self.plot_fft.isVisible():
-             self.curve_fft.setData(self.fft_data['freqs'], self.fft_data['mags'])
-        else:
-            pass
+        # Update FFT plot if data is available and plot is visible
+        if self.plot_fft.isVisible():
+            if len(self.fft_data['freqs']) > 0 and len(self.fft_data['mags']) > 0:
+                # Ensure arrays are same length to prevent jitter
+                if len(self.fft_data['freqs']) == len(self.fft_data['mags']):
+                    freqs = self.fft_data['freqs']
+                    mags = self.fft_data['mags']
+                    freq_res = self.fft_data.get('freq_resolution', 1.0)
+                    
+                    # Update bar graph - each bin is a bar
+                    # Width of each bar is the frequency resolution (80% to leave gaps)
+                    self.curve_fft.setOpts(x=freqs, height=mags, width=freq_res * 0.8)
+                    
+                    # Set x-axis range to show all bins
+                    self.plot_fft.setXRange(freqs[0] - freq_res, freqs[-1] + freq_res, padding=0.02)
+                    
+                    # Update x-axis ticks to show frequency values
+                    # Prioritize showing low frequencies clearly (0-50Hz region important for 30Hz cutoff)
+                    num_bins = len(freqs)
+                    
+                    # Always show important frequencies: 0, 10, 20, 30, 40, 50Hz and then subsample
+                    important_freqs = [0, 10, 20, 30, 40, 50, 100, 150, 200]
+                    tick_indices = []
+                    
+                    for imp_f in important_freqs:
+                        # Find closest bin to this frequency
+                        idx = np.argmin(np.abs(freqs - imp_f))
+                        if idx < num_bins and idx not in tick_indices:
+                            tick_indices.append(idx)
+                    
+                    # Add additional ticks for higher frequencies
+                    if num_bins > 20:
+                        step = max(1, num_bins // 20)
+                        for i in range(0, num_bins, step):
+                            if i not in tick_indices:
+                                tick_indices.append(i)
+                    else:
+                        # Show all bins
+                        tick_indices = list(range(num_bins))
+                    
+                    tick_indices = sorted(set(tick_indices))
+                    
+                    # Major ticks with frequency labels
+                    major_ticks = [(freqs[i], f"{freqs[i]:.1f}") for i in tick_indices]
+                    # Minor ticks for all bins (without labels for cleaner look)
+                    minor_ticks = [(freqs[i], "") for i in range(num_bins) if i not in tick_indices]
+                    
+                    self.plot_fft.getAxis('bottom').setTicks([major_ticks, minor_ticks])
             
         self.check_thresholds()
 
@@ -2177,6 +2229,7 @@ class AdaptiveGripperGUI(QMainWindow):
         
         cur_t = self.replay_data[self.replay_index].get('t', 0)
         
+        # Update replay FFT if available
         if self.replay_fft_data:
             best_frame = None
             for frame in self.replay_fft_data:
@@ -2184,16 +2237,41 @@ class AdaptiveGripperGUI(QMainWindow):
                     break
                 best_frame = frame
                 
-            if best_frame:
+            if best_frame and 'data' in best_frame:
                 fft_vals = best_frame['data']
                 sample_rate = self.spin_fft_rate.value()
                 num_bins = len(fft_vals)
-                freqs = np.linspace(0, sample_rate / 2, num_bins)
-                self.curve_replay_fft.setData(freqs, fft_vals)
+                
+                # Calculate frequency bins dynamically (must match FFT processing)
+                # Arduino sends FFT_SAMPLES/2 bins from FFT_SAMPLES-point FFT
+                fft_size = num_bins * 2
+                freq_resolution = sample_rate / fft_size
+                freqs = np.arange(num_bins) * freq_resolution
+                mags = np.array(fft_vals)
+                
+                # Update bar graph
+                self.curve_replay_fft.setOpts(x=freqs, height=mags, width=freq_resolution * 0.8)
+                
+                # Set x-axis range to show all bins
+                self.plot_replay_fft.setXRange(freqs[0] - freq_resolution, freqs[-1] + freq_resolution, padding=0.02)
+                
+                # Update x-axis ticks
+                if num_bins <= 20:
+                    tick_indices = range(num_bins)
+                else:
+                    step = max(1, num_bins // 20)
+                    tick_indices = range(0, num_bins, step)
+                
+                # Major ticks with frequency labels
+                major_ticks = [(freqs[i], f"{freqs[i]:.1f}") for i in tick_indices]
+                # Minor ticks for all bins
+                minor_ticks = [(freqs[i], "") for i in range(num_bins) if i not in tick_indices]
+                
+                self.plot_replay_fft.getAxis('bottom').setTicks([major_ticks, minor_ticks])
             else:
-                self.curve_replay_fft.clear()
+                self.curve_replay_fft.setOpts(x=[], height=[])
         else:
-            self.curve_replay_fft.clear()
+            self.curve_replay_fft.setOpts(x=[], height=[])
         
         self.lbl_replay_time.setText(f"{cur_t:.2f} ms")
         

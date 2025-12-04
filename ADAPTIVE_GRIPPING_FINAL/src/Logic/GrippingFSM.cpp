@@ -74,6 +74,7 @@ namespace GrippingFSM {
       case GRIPPING_MODE_REACTING:
        { // Tighten grip in response to slip
         int slip_u= round(slip_indicator / SLIP_THRESHOLD);
+        if (slip_u > GRIP_SLIP_MARGIN_FALSE_POSITIVE*SLIP_THRESHOLD) slip_u=0;
         if (slip_u>MAX_REACTION_STEPS) slip_u=MAX_REACTION_STEPS;
         servo_position -= slip_u;
         

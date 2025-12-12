@@ -96,7 +96,7 @@ CAD files are available in the `hardware/gripper/` directory as STEP format.
 The elastic sensor element is the core innovation of this project. It uses a planar spiral flexure geometry that acts as a 3-DOF spring with the magnet mounted at the center.
 
 <p align="center">
-  <img src="docs/images/Slika_3.2_​_​_​_​_​_Slika_3.3.png" width="60%" />
+  <img src="docs/images/Slika_3.2_​_​_​_​_​_Slika_3.3.png" width="40%" />
 </p>
 
 **Design parameters:**
@@ -190,10 +190,6 @@ The firmware implements a deterministic control loop using FreeRTOS on ESP32's d
 Inter-core data sharing is protected by mutex to prevent race conditions.
 
 ### Scan Cycle
-
-<p align="center">
-  <img src="docs/images/Slika_4.2_no_description.png" width="40%" />
-</p>
 
 The main loop follows a PLC-style scan cycle triggered by hardware timer at 2 kHz:
 

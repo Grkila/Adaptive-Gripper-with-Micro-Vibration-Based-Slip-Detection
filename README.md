@@ -107,7 +107,7 @@ To ensure repeatable experimental conditions and eliminate operator subjectivity
 
 **Construction:**
 
-- Frame: Aluminum extrusion with linear guides
+- Frame: Aluminum T extrusion 
 - Drive: M8x1.25mm lead screw coupled to NEMA17 stepper motor
 - Controller: TMC2209 driver with StallGuard4 for sensorless homing
 - Resolution: 2560 steps/mm (16 microsteps, 1.8 degree motor)

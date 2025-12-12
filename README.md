@@ -306,21 +306,26 @@ The system was validated on various objects to demonstrate robustness and adapta
 
 The gripper successfully grasped and held a deformable sponge with minimal compression (~5%), demonstrating the algorithm's ability to apply just enough force.
 
-![Sponge Test 1](docs/images/Slika_5.6_​_​_Slika_5.7_​_Slika_5.8_2​sundjer.jpeg)
-
-![Sponge Test 2](docs/images/Slika_5.8_sundjer.jpeg)
+<p align="center">
+  <img src="docs/images/Slika_5.6_​_​_Slika_5.7_​_Slika_5.8_2​sundjer.jpeg" width="45%" />
+  <img src="docs/images/Slika_5.8_sundjer.jpeg" width="45%" />
+</p>
 
 ### Rigid Objects (Cardboard Box)
 
 A thin cardboard box (155g) was held without visible wall deformation, confirming optimal force application.
 
-![Box Test](docs/images/Slika_5.9_Bez_deformacija.jpeg)
+<p align="center">
+  <img src="docs/images/Slika_5.9_Bez_deformacija.jpeg" width="60%" />
+</p>
 
 ### Irregular Geometry (Cylindrical Object)
 
 A 220g cylindrical tool was successfully held despite line contact instead of surface contact. Initial slip of ~10mm occurred during lifting transition before the system stabilized.
 
-![Cylindrical Object Test](docs/images/Slika_5.10_no_description.jpeg)
+<p align="center">
+  <img src="docs/images/Slika_5.10_no_description.jpeg" width="60%" />
+</p>
 
 ### Performance Metrics
 

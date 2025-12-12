@@ -10,7 +10,7 @@ A complete mechatronics project featuring a parallel gripper with real-time slip
 > All components of this project (PCB layout, firmware, and desktop application) were developed by the author. The mechanical design is based on [1] with significant modifications for sensor integration.
 
 <p align="center">
-  <img src="docs/images/Slika_3.18.png" width="60%" />
+  <img src="docs/images/Slika_3.18.png" width="40%" />
 </p>
 
 
@@ -59,7 +59,7 @@ This project presents a novel approach to adaptive grip force control where the 
 ## System Architecture
 
 <p align="center">
-  <img src="docs/images/Slika_3.1_no_description.png" width="60%" />
+  <img src="docs/images/Slika_3.1_no_description.png" width="80%" />
 </p>
 
 The system consists of three main subsystems:
@@ -113,8 +113,8 @@ The natural frequency was empirically tuned through 10+ iterations using impulse
 To ensure repeatable experimental conditions and eliminate operator subjectivity, a dedicated vertical positioning system was designed and built.
 
 <p align="center">
-  <img src="docs/images/Slika_3.16_​_​_​_Slika_3.17​_​_Slika_3.18.png" width="60%" />
-  <img src="docs/images/Slika_3.17.png" width="60%" />
+  <img src="docs/images/Slika_3.16_​_​_​_Slika_3.17​_​_Slika_3.18.png" width="40%" />
+  <img src="docs/images/Slika_3.17.png" width="40%" />
 </p>
 
 **Purpose:** Manual lifting introduces inconsistent accelerations and mechanical vibrations that can mask the slip signal or cause false detections. This platform guarantees identical velocity profiles across all test cycles. The use of this platform eliminates human variability in lifting speed and stability, which is essential for validating the sensitivity of the slip detection algorithm.
@@ -192,7 +192,7 @@ Inter-core data sharing is protected by mutex to prevent race conditions.
 ### Scan Cycle
 
 <p align="center">
-  <img src="docs/images/Slika_4.2_no_description.png" width="60%" />
+  <img src="docs/images/Slika_4.2_no_description.png" width="40%" />
 </p>
 
 The main loop follows a PLC-style scan cycle triggered by hardware timer at 2 kHz:
@@ -344,7 +344,7 @@ The gripper successfully grasped and held a deformable sponge with minimal compr
 A thin cardboard box (155g) was held without visible wall deformation, confirming optimal force application.
 
 <p align="center">
-  <img src="docs/images/Slika_5.9_Bez_deformacija.jpeg" width="60%" />
+  <img src="docs/images/Slika_5.9_Bez_deformacija.jpeg" width="45%" />
 </p>
 
 ### Irregular Geometry (Cylindrical Object)
@@ -352,7 +352,7 @@ A thin cardboard box (155g) was held without visible wall deformation, confirmin
 A 220g cylindrical tool was successfully held despite line contact instead of surface contact. Initial slip of ~10mm occurred during lifting transition before the system stabilized.
 
 <p align="center">
-  <img src="docs/images/Slika_5.10_no_description.jpeg" width="60%" />
+  <img src="docs/images/Slika_5.10_no_description.jpeg" width="45%" />
 </p>
 
 ### Performance Metrics

@@ -200,7 +200,7 @@ The main loop follows a PLC-style scan cycle triggered by hardware timer at 2 kH
 ### Signal Processing
 
 <p align="center">
-  <img src="docs/images/Slika_4.3_no_description.png" width="60%" />
+  <img src="docs/images/Slika_4.3_no_description.png" width="100%" />
 </p>
 
 The signal processing pipeline:

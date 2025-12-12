@@ -251,7 +251,7 @@ When FFT mode is enabled, spectral data is streamed as:
 
 The data array contains 64 magnitude values from the high-pass filtered signal.
 
-Full protocol documentation: `firmware/ADAPTIVE_GRIPPING_FINAL/debugCommands.md`
+Full protocol documentation: `firmware/Thesis_Gripper/debugCommands.md`
 
 ## Desktop Application
 
@@ -350,7 +350,7 @@ The PCB was designed but not manufactured; the prototype uses perfboard construc
 ## Repository Structure
 
 ```
-Adaptive_griping_final/
+Adaptive-Gripper-with-Micro-Vibration-Based-Slip-Detection/
 ├── firmware/
 │   └── Thesis_Gripper/
 │       ├── Thesis_Gripper.ino    # Main program

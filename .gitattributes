@@ -1,0 +1,5 @@
+# Force Arduino files to count as C++
+*.ino linguist-language=C++
+
+# Hide the software folder from stats
+software/* linguist-documentation

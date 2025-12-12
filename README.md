@@ -3,7 +3,7 @@
 A complete mechatronics project featuring a parallel gripper with real-time slip detection using a 3D magnetic sensor (TLV493D) and FFT-based signal analysis. The system autonomously adjusts grip force by detecting incipient slip through micro-vibration analysis, preventing object loss while minimizing applied force.
 
 **Author:** Dušan Grković  
-**Mentor:** Prof. Dr. Zoran Jeličić
+**Mentor:** Prof. Dr. Zoran Jeličić  
 **Institution:** Faculty of Technical Sciences, Novi Sad  
 **Date:** 2025
 

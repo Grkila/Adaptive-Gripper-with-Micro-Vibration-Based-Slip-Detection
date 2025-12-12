@@ -7,7 +7,7 @@ A complete mechatronics project featuring a parallel gripper with real-time slip
 **Institution:** Faculty of Technical Sciences, Novi Sad  
 **Date:** 2025
 
-> All components of this project (PCB layout, firmware, and desktop application) were developed by the author. The mechanical design is based on [7] with significant modifications for sensor integration.
+> All components of this project (PCB layout, firmware, and desktop application) were developed by the author. The mechanical design is based on [1] with significant modifications for sensor integration.
 
 ![Gripper CAD Model](docs/images/Slika_2.8_​.png)
 
@@ -71,7 +71,7 @@ The system consists of three main subsystems:
 
 The parallel gripper uses a rack and pinion mechanism for linear motion transformation. One finger is active (moving) while the other is passive (stationary) with the integrated sensor element.
 
-**Note:** The mechanical design of the gripper is based on the open-source "Robot-manipulator" project by AnnaW21 [7], with significant modifications to integrate the custom sensor element and optimize it for the specific requirements of this project.
+**Note:** The mechanical design of the gripper is based on the open-source "Robot-manipulator" project by AnnaW21 [1], with significant modifications to integrate the custom sensor element and optimize it for the specific requirements of this project.
 
 ![Gripper Assembly](docs/images/Slika_2.10_no_description.png)
 
@@ -443,13 +443,7 @@ python signal_analysis_gui.py
 
 ## References
 
-1. Holweg, E. G. M., et al. "Slip detection by tactile sensors: algorithms and experimental results." IEEE ICRA 1996.
-2. Le Signor, T., et al. "Mass-manufacturable 3D magnetic force sensor for robotic grasping and slip detection." Sensors 2023.
-3. Howe, R. D., and M. R. Cutkosky. "Sensing skin acceleration for slip and texture perception." IEEE ICRA 1989.
-4. Fernández, R., et al. "Micro-vibration-based slip detection in tactile force sensors." Sensors 2014.
-5. Infineon Technologies. "3D Magnetic Sensor: How to Make a Magnetic Design for Joysticks." Application Note 2016.
-6. Ma, R. R., and A. M. Dollar. "Yale OpenHand Project: Optimizing Open-Source Hand Designs for Ease of Fabrication and Adoption." IEEE RAM 2017.
-7. AnnaW21. "Robot-manipulator." GitHub, 2021. [Online]. Available: https://github.com/AnnaW21/Robot-manipulator. (Repository containing 3D models and code for a robotic manipulator, whose gripper mechanical design was adapted for this work).
+1. AnnaW21. "Robot-manipulator." GitHub, 2021. [Online]. Available: https://github.com/AnnaW21/Robot-manipulator. (Repository containing 3D models and code for a robotic manipulator, whose gripper mechanical design was adapted for this work).
 
 Full thesis with detailed derivations: `docs/Thesis_DIPLOMSKI.pdf`
 

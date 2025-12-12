@@ -9,7 +9,8 @@ A complete mechatronics project featuring a parallel gripper with real-time slip
 
 > All components of this project (PCB layout, firmware, and desktop application) were developed by the author. The mechanical design is based on [1] with significant modifications for sensor integration.
 
-![Gripper CAD Model](docs/images/Slika_2.8_​.png)
+![Gripper CAD Model](docs/images/Slika_3.18.png)
+
 
 ## Table of Contents
 
@@ -103,7 +104,10 @@ The natural frequency was empirically tuned through 10+ iterations using impulse
 
 To ensure repeatable experimental conditions and eliminate operator subjectivity, a dedicated vertical positioning system was designed and built.
 
-**Purpose:** Manual lifting introduces inconsistent accelerations and mechanical vibrations that can mask the slip signal or cause false detections. This platform guarantees identical velocity profiles across all test cycles.
+![Test Platform Overview](docs/images/Slika_3.16_​_​_​_Slika_3.17​_​_Slika_3.18.png)
+![Test Platform Physical Assembly](docs/images/Slika_3.17.png)
+
+**Purpose:** Manual lifting introduces inconsistent accelerations and mechanical vibrations that can mask the slip signal or cause false detections. This platform guarantees identical velocity profiles across all test cycles. The use of this platform eliminates human variability in lifting speed and stability, which is essential for validating the sensitivity of the slip detection algorithm.
 
 **Construction:**
 

@@ -420,7 +420,7 @@ Adaptive-Gripper-with-Micro-Vibration-Based-Slip-Detection/
 │   └── requirements.txt                    # Python dependencies
 ├── docs/
 │   ├── images/                             # Documentation images
-│   └── Thesis_DIPLOMSKI.pdf                # Full thesis document
+│   └── DIPLOMSKI.pdf                # Full thesis document
 └── data/                                   # Sample measurement data
 ```
 
@@ -478,7 +478,7 @@ python signal_analysis_gui.py
 
 1. AnnaW21. "Robot-manipulator." GitHub, 2021. [Online]. Available: https://github.com/AnnaW21/Robot-manipulator. (Repository containing 3D models and code for a robotic manipulator, whose gripper mechanical design was adapted for this work).
 
-Full thesis with detailed derivations: `docs/Thesis_DIPLOMSKI.pdf`
+Full thesis with detailed derivations: `docs/DIPLOMSKI.pdf`
 
 ## License
 

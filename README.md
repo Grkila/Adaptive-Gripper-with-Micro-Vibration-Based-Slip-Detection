@@ -6,7 +6,7 @@ A complete mechatronics project featuring a parallel gripper with real-time slip
 **Institution:** Faculty of Technical Sciences, Novi Sad  
 **Date:** 2025
 
-> All components of this project (mechanical design, PCB layout, firmware, and desktop application) were developed by the author.
+> All components of this project (PCB layout, firmware, and desktop application) were developed by the author. The mechanical design is based on [7] with significant modifications for sensor integration.
 
 ![Gripper CAD Model](docs/images/Slika_2.8_​.png)
 
@@ -69,6 +69,8 @@ The system consists of three main subsystems:
 ### Mechanical Design
 
 The parallel gripper uses a rack and pinion mechanism for linear motion transformation. One finger is active (moving) while the other is passive (stationary) with the integrated sensor element.
+
+**Note:** The mechanical design of the gripper is based on the open-source "Robot-manipulator" project by AnnaW21 [7], with significant modifications to integrate the custom sensor element and optimize it for the specific requirements of this project.
 
 ![Gripper Assembly](docs/images/Slika_2.10_no_description.png)
 
@@ -427,7 +429,9 @@ python signal_analysis_gui.py
 
 - Material: PETG recommended (PLA may deform under friction heat)
 - Layer height: 0.2 mm
-- Infill: 40% for structural parts, 100% for sensor element
+- Infill: 20% for structural parts, gyroid infill
+- Nozzle : 0.4 mm for sensor, 0.6 mm for rest of assembly 
+- Wall loops 4 for sensor, 2 for rest of assembly
 - Print orientation: Follow original STEP file orientation for optimal strength
 
 **Electronics:**
@@ -444,6 +448,7 @@ python signal_analysis_gui.py
 4. Fernández, R., et al. "Micro-vibration-based slip detection in tactile force sensors." Sensors 2014.
 5. Infineon Technologies. "3D Magnetic Sensor: How to Make a Magnetic Design for Joysticks." Application Note 2016.
 6. Ma, R. R., and A. M. Dollar. "Yale OpenHand Project: Optimizing Open-Source Hand Designs for Ease of Fabrication and Adoption." IEEE RAM 2017.
+7. AnnaW21. "Robot-manipulator." GitHub, 2021. [Online]. Available: https://github.com/AnnaW21/Robot-manipulator. (Repository containing 3D models and code for a robotic manipulator, whose gripper mechanical design was adapted for this work).
 
 Full thesis with detailed derivations: `docs/Thesis_DIPLOMSKI.pdf`
 

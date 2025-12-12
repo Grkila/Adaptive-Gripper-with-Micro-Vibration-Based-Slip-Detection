@@ -352,8 +352,8 @@ The PCB was designed but not manufactured; the prototype uses perfboard construc
 ```
 Adaptive_griping_final/
 ├── firmware/
-│   └── ADAPTIVE_GRIPPING_FINAL/
-│       ├── ADAPTIVE_GRIPPING_FINAL.ino    # Main program
+│   └── Thesis_Gripper/
+│       ├── Thesis_Gripper.ino    # Main program
 │       ├── debugCommands.md               # Serial protocol documentation
 │       └── src/
 │           ├── Config.h                    # System configuration
@@ -400,7 +400,7 @@ Adaptive_griping_final/
 
 **Steps:**
 
-1. Open `firmware/ADAPTIVE_GRIPPING_FINAL/ADAPTIVE_GRIPPING_FINAL.ino` in Arduino IDE
+1. Open `firmware/Thesis_Gripper/Thesis_Gripper.ino` in Arduino IDE
 2. Select board: ESP32 Dev Module
 3. Configure upload speed: 921600
 4. Adjust pin definitions in `Config.h` if needed

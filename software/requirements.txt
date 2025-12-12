@@ -2,4 +2,4 @@ PyQt6
 pyqtgraph
 pyserial
 numpy
-
+PyMuPDF

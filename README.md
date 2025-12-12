@@ -9,7 +9,9 @@ A complete mechatronics project featuring a parallel gripper with real-time slip
 
 > All components of this project (PCB layout, firmware, and desktop application) were developed by the author. The mechanical design is based on [1] with significant modifications for sensor integration.
 
-![Gripper CAD Model](docs/images/Slika_3.18.png)
+<p align="center">
+  <img src="docs/images/Slika_3.18.png" width="60%" />
+</p>
 
 
 ## Table of Contents
@@ -56,7 +58,9 @@ This project presents a novel approach to adaptive grip force control where the 
 
 ## System Architecture
 
-![High Level Architecture](docs/images/Slika_3.1_no_description.png)
+<p align="center">
+  <img src="docs/images/Slika_3.1_no_description.png" width="60%" />
+</p>
 
 The system consists of three main subsystems:
 
@@ -74,7 +78,9 @@ The parallel gripper uses a rack and pinion mechanism for linear motion transfor
 
 **Note:** The mechanical design of the gripper is based on the open-source "Robot-manipulator" project by AnnaW21 [1], with significant modifications to integrate the custom sensor element and optimize it for the specific requirements of this project.
 
-![Gripper Assembly](docs/images/Slika_2.10_no_description.png)
+<p align="center">
+  <img src="docs/images/Slika_2.10_no_description.png" width="60%" />
+</p>
 
 **Key specifications:**
 
@@ -89,7 +95,9 @@ CAD files are available in the `hardware/gripper/` directory as STEP format.
 
 The elastic sensor element is the core innovation of this project. It uses a planar spiral flexure geometry that acts as a 3-DOF spring with the magnet mounted at the center.
 
-![Sensor Element Detail](docs/images/Slika_3.2_​_​_​_​_​_Slika_3.3.png)
+<p align="center">
+  <img src="docs/images/Slika_3.2_​_​_​_​_​_Slika_3.3.png" width="60%" />
+</p>
 
 **Design parameters:**
 
@@ -104,8 +112,10 @@ The natural frequency was empirically tuned through 10+ iterations using impulse
 
 To ensure repeatable experimental conditions and eliminate operator subjectivity, a dedicated vertical positioning system was designed and built.
 
-![Test Platform Overview](docs/images/Slika_3.16_​_​_​_Slika_3.17​_​_Slika_3.18.png)
-![Test Platform Physical Assembly](docs/images/Slika_3.17.png)
+<p align="center">
+  <img src="docs/images/Slika_3.16_​_​_​_Slika_3.17​_​_Slika_3.18.png" width="60%" />
+  <img src="docs/images/Slika_3.17.png" width="60%" />
+</p>
 
 **Purpose:** Manual lifting introduces inconsistent accelerations and mechanical vibrations that can mask the slip signal or cause false detections. This platform guarantees identical velocity profiles across all test cycles. The use of this platform eliminates human variability in lifting speed and stability, which is essential for validating the sensitivity of the slip detection algorithm.
 
@@ -130,7 +140,9 @@ CAD files available in: `hardware/lifting platform/lifter.step`
 
 ### Electronics
 
-![Schematic](docs/images/Slika_3.13_no_description.png)
+<p align="center">
+  <img src="docs/images/Slika_3.13_no_description.png" width="60%" />
+</p>
 
 The electronic system is built around an ESP32 development module with the following interfaces:
 
@@ -166,7 +178,9 @@ PCB design files (EasyEDA format) available in: `hardware/pcb/EasyEda/`
 
 The firmware implements a deterministic control loop using FreeRTOS on ESP32's dual-core architecture.
 
-![Software Architecture](docs/images/Slika_4.1_no_description.png)
+<p align="center">
+  <img src="docs/images/Slika_4.1_no_description.png" width="60%" />
+</p>
 
 **Core assignment:**
 
@@ -177,7 +191,9 @@ Inter-core data sharing is protected by mutex to prevent race conditions.
 
 ### Scan Cycle
 
-![Scan Cycle](docs/images/Slika_4.2_no_description.png)
+<p align="center">
+  <img src="docs/images/Slika_4.2_no_description.png" width="60%" />
+</p>
 
 The main loop follows a PLC-style scan cycle triggered by hardware timer at 2 kHz:
 
@@ -187,7 +203,9 @@ The main loop follows a PLC-style scan cycle triggered by hardware timer at 2 kH
 
 ### Signal Processing
 
-![Signal Processing Chain](docs/images/Slika_4.3_no_description.png)
+<p align="center">
+  <img src="docs/images/Slika_4.3_no_description.png" width="60%" />
+</p>
 
 The signal processing pipeline:
 
@@ -207,7 +225,9 @@ The frequency weighting gives higher importance to higher frequency components c
 
 ### State Machine
 
-![Finite State Machine](docs/images/Slika_4.4_no_description.png)
+<p align="center">
+  <img src="docs/images/Slika_4.4_no_description.png" width="60%" />
+</p>
 
 The gripper control FSM has five states:
 
@@ -284,19 +304,27 @@ A Python-based desktop application was developed for real-time signal visualizat
 
 **Real-time signal visualization:**
 
-![Visualizer](docs/images/Slika_4.6_no_description.png)
+<p align="center">
+  <img src="docs/images/Slika_4.6_no_description.png" width="60%" />
+</p>
 
 **Raw serial terminal:**
 
-![Raw Serial](docs/images/Slika_4.7_no_description.png)
+<p align="center">
+  <img src="docs/images/Slika_4.7_no_description.png" width="60%" />
+</p>
 
 **Recorded data replay:**
 
-![Replay Mode](docs/images/Slika_4.7_prikazuje_mogucnost_za_ucitavanje_sacuvanih_merenja_i_dalje_analiziranje..png)
+<p align="center">
+  <img src="docs/images/Slika_4.7_prikazuje_mogucnost_za_ucitavanje_sacuvanih_merenja_i_dalje_analiziranje..png" width="60%" />
+</p>
 
 **FFT analysis with spectrogram:**
 
-![FFT Analysis](docs/images/Slika_4.9_prikazuje_deo_za_analizu_FFT_signala._Gore_moze_da_se_vidi_trenutni_odziv_dok_dole_moze_da_se_vidi_h.png)
+<p align="center">
+  <img src="docs/images/Slika_4.9_prikazuje_deo_za_analizu_FFT_signala._Gore_moze_da_se_vidi_trenutni_odziv_dok_dole_moze_da_se_vidi_h.png" width="60%" />
+</p>
 
 ## Test Results
 

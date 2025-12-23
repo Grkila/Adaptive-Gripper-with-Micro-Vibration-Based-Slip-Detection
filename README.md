@@ -345,13 +345,17 @@ The gripper successfully grasped and held a deformable sponge with minimal compr
   <img src="docs/images/gifs/sponge_speedup.gif" width="90%" />
 </p>
 
-### Rigid Objects (Cardboard Box)
+### Soft Objects (Cardboard Box)
 
 A thin cardboard box (155g) was held without visible wall deformation, confirming optimal force application.
 
 <p align="center">
   <img src="docs/images/Slika_5.9_Bez_deformacija.jpeg" width="45%" />
 </p>
+
+### Soft Objects (Cardboard Box)
+A thin rigid PETG box (20g) was held without slippage, later it was added weights up to 500g confirming optimal force application.
+Minimal slip ~5mm.
 
 <p align="center">
   <img src="docs/images/gifs/testbox_speedup.gif" width="90%" />

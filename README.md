@@ -140,6 +140,8 @@ Instead of physical limit switches, the system uses the TMC2209's StallGuard fea
 
 <p align="center">
   <img src="docs/images/gifs/homing_seqence_v2_speedup.gif" width="80%" />
+  <br>
+  <a href="docs/powerpoint/Video/homing_seqence_v2_speedup.mp4">▶️ Watch original video</a>
 </p>
 
 CAD files available in: `hardware/lifting platform/lifter.step`
@@ -343,6 +345,8 @@ The gripper successfully grasped and held a deformable sponge with minimal compr
 
 <p align="center">
   <img src="docs/images/gifs/sponge_speedup.gif" width="90%" />
+  <br>
+  <a href="docs/powerpoint/Video/sponge_speedup.mp4">▶️ Watch original video</a>
 </p>
 
 ### Soft Objects (Cardboard Box)
@@ -359,6 +363,8 @@ Minimal slip ~5mm.
 
 <p align="center">
   <img src="docs/images/gifs/testbox_speedup.gif" width="90%" />
+  <br>
+  <a href="docs/powerpoint/Video/testbox_speedup.mp4">▶️ Watch original video</a>
 </p>
 
 ### Irregular Geometry (Cylindrical Object)
@@ -371,6 +377,8 @@ A 220g cylindrical tool was successfully held despite line contact instead of su
 
 <p align="center">
   <img src="docs/images/gifs/cylinder_speedup.gif" width="90%" />
+  <br>
+  <a href="docs/powerpoint/Video/cylinder_speedup.mp4">▶️ Watch original video</a>
 </p>
 
 ### Fragile Objects (Balloon)
@@ -380,6 +388,9 @@ The system also demonstrates capability with fragile objects like air-filled and
 <p align="center">
   <img src="docs/images/gifs/ballone_speedup.gif" width="45%" />
   <img src="docs/images/gifs/waterballone_speedup.gif" width="45%" />
+  <br>
+  <a href="docs/powerpoint/Video/ballone_speedup.mp4">▶️ Watch air balloon video</a> | 
+  <a href="docs/powerpoint/Video/waterballone_speedup.mp4">▶️ Watch water balloon video</a>
 </p>
 
 ### Performance Metrics
@@ -510,6 +521,8 @@ python signal_analysis_gui.py
 1. AnnaW21. "Robot-manipulator." GitHub, 2021. [Online]. Available: https://github.com/AnnaW21/Robot-manipulator. (Repository containing 3D models and code for a robotic manipulator, whose gripper mechanical design was adapted for this work).
 
 Full thesis with detailed derivations: `docs/DIPLOMSKI.pdf`
+
+Presentation slides: [Diplomski_prez.pptx](docs/powerpoint/Diplomski_prez.pptx) (Requires PowerPoint 2018 or newer)
 
 ## License
 

@@ -136,9 +136,7 @@ Instead of physical limit switches, the system uses the TMC2209's StallGuard fea
 4. When load increases (SG_RESULT drops below threshold for 3 consecutive reads), stop and set position to zero
 5. Restore nominal current and acceleration parameters
 
-<p align="center">
-  <video src="docs/powerpoint/Video/homing_seqence_v2_speedup.mp4" width="80%" controls></video>
-</p>
+[▶️ View Video: Homing Sequence](docs/powerpoint/Video/homing_seqence_v2_speedup.mp4)
 
 CAD files available in: `hardware/lifting platform/lifter.step`
 
@@ -339,9 +337,7 @@ The gripper successfully grasped and held a deformable sponge with minimal compr
   <img src="docs/images/Slika_5.8_sundjer.jpeg" width="45%" />
 </p>
 
-<p align="center">
-  <video src="docs/powerpoint/Video/sponge_speedup.mp4" width="80%" controls></video>
-</p>
+[▶️ View Video: Soft Object (Sponge)](docs/powerpoint/Video/sponge_speedup.mp4)
 
 ### Rigid Objects (Cardboard Box)
 
@@ -351,9 +347,7 @@ A thin cardboard box (155g) was held without visible wall deformation, confirmin
   <img src="docs/images/Slika_5.9_Bez_deformacija.jpeg" width="45%" />
 </p>
 
-<p align="center">
-  <video src="docs/powerpoint/Video/testbox_speedup.mp4" width="80%" controls></video>
-</p>
+[▶️ View Video: Rigid Object (Box)](docs/powerpoint/Video/testbox_speedup.mp4)
 
 ### Irregular Geometry (Cylindrical Object)
 
@@ -363,18 +357,13 @@ A 220g cylindrical tool was successfully held despite line contact instead of su
   <img src="docs/images/Slika_5.10_no_description.jpeg" width="45%" />
 </p>
 
-<p align="center">
-  <video src="docs/powerpoint/Video/cylinder_speedup.mp4" width="80%" controls></video>
-</p>
+[▶️ View Video: Cylindrical Object](docs/powerpoint/Video/cylinder_speedup.mp4)
 
 ### Fragile Objects (Balloon)
 
 The system also demonstrates capability with fragile objects like air-filled and water-filled balloons, adjusting grip force to prevent bursting while maintaining a secure hold.
 
-<p align="center">
-  <video src="docs/powerpoint/Video/ballone_speedup.mp4" width="45%" controls></video>
-  <video src="docs/powerpoint/Video/waterballone_speedup.mp4" width="45%" controls></video>
-</p>
+[▶️ View Video: Air Balloon](docs/powerpoint/Video/ballone_speedup.mp4) | [▶️ View Video: Water Balloon](docs/powerpoint/Video/waterballone_speedup.mp4)
 
 ### Performance Metrics
 

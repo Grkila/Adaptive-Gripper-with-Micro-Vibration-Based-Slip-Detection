@@ -13,6 +13,14 @@ A complete mechatronics project featuring a parallel gripper with real-time slip
   <img src="docs/images/Slika_3.18.png" width="80%" />
 </p>
 
+<!-- ADD THIS BLOCK HERE -->
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=gOe6JvAW2Xo">
+    <img src="https://img.shields.io/badge/YouTube-Watch%20Full%20Demo-red?logo=youtube&style=for-the-badge" alt="Watch on YouTube"/>
+  </a>
+</p>
+<!-- END BLOCK -->
+
 
 ## Table of Contents
 

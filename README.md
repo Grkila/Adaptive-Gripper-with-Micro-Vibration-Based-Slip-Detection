@@ -10,7 +10,7 @@ A complete mechatronics project featuring a parallel gripper with real-time slip
 > All components of this project (PCB layout, firmware, and desktop application) were developed by the author. The mechanical design is based on [1] with significant modifications for sensor integration.
 
 <p align="center">
-  <img src="docs/images/Slika_3.18.png" width="80%" />
+  <img src="docs/images/Lifter_render.png" width="80%" />
 </p>
 
 <!-- ADD THIS BLOCK HERE -->
@@ -104,7 +104,7 @@ CAD files are available in the `hardware/gripper/` directory as STEP format.
 The elastic sensor element is the core innovation of this project. It uses a planar spiral flexure geometry that acts as a 3-DOF spring with the magnet mounted at the center.
 
 <p align="center">
-  <img src="docs/images/Slika_3.2_​_​_​_​_​_Slika_3.3.png" width="40%" />
+  <img src="docs/images/senosor_element.png" width="80%" />
 </p>
 
 **Design parameters:**
@@ -195,7 +195,7 @@ PCB design files (EasyEDA format) available in: `hardware/pcb/EasyEda/`
 The firmware implements a deterministic control loop using FreeRTOS on ESP32's dual-core architecture.
 
 <p align="center">
-  <img src="docs/images/Slika_4.1_no_description.png" width="60%" />
+  <img src="docs/images/Firmware schema.png" width="80%" />
 </p>
 
 **Core assignment:**
